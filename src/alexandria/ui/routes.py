@@ -407,7 +407,8 @@ async def add(
                       project=project, tab="url", error=str(exc))  # fmt: skip
     c.enqueued()
     notice = "Already in the library." if result.duplicate else "Saved. Fetching in the background…"
-    return back(f"/r/{result.resource.slug}", notice=notice)
+    # By id: an article's slug may still change once its title is extracted (ADR-0008).
+    return back(f"/r/{result.resource.id}", notice=notice)
 
 
 @router.post("/notes/new", dependencies=[Csrf])
@@ -462,7 +463,7 @@ async def upload(
     c.enqueued()
     if len(saved) == 1 and not errors:
         note = "Already in the library." if duplicates else "Saved. Extracting text…"
-        return back(f"/r/{saved[0].slug}", notice=note)
+        return back(f"/r/{saved[0].id}", notice=note)
     notice = f"{len(saved) - duplicates} document(s) saved, {duplicates} already there."
     return back("/activity", notice=notice, error="; ".join(errors) or None)
 

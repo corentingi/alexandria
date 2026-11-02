@@ -644,7 +644,7 @@ class Library:
         ):
             resource.title = result.title.strip()[:300]
             resource.title_source = TitleSource.EXTRACTED
-            if first_snapshot and resource.kind in (Kind.ARTICLE, Kind.DOCUMENT):
+            if first_snapshot and resource.kind == Kind.ARTICLE:
                 # The slug was derived from the URL; now we know the real title.
                 resource.slug = unique_slug(
                     resource.title, lambda s: self.index.slug_taken(s, resource_id)

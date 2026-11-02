@@ -221,6 +221,7 @@ class TestUi:
         res = client.post("/add", data={"url": URL, "csrf": csrf}, follow_redirects=False)
         assert res.status_code == 303
         slug_page = res.headers["location"].split("?")[0]
+        assert re.fullmatch(r"/r/[0-9a-f-]{36}", slug_page)  # by id: the slug may change
         assert client.get(slug_page).status_code == 200
         inbox = client.get("/inbox").text
         assert "Why keep this?" in inbox
