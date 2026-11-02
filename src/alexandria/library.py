@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import shutil
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
@@ -21,6 +22,7 @@ from alexandria.config import Settings
 from alexandria.fetchers.article import ArticleFetcher
 from alexandria.fetchers.attachment import download_attachment
 from alexandria.fetchers.base import Fetcher, FetchError, PermanentFetchError
+from alexandria.fetchers.document import DocumentFetcher
 from alexandria.fetchers.git_repo import GitRepoFetcher
 from alexandria.ids import new_id, unique_slug
 from alexandria.models import (
@@ -82,6 +84,16 @@ class Update:
 
 
 @dataclass
+class ImportReport:
+    created: list[str] = field(default_factory=list)
+    duplicates: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+
+
+MAX_IMPORT = 5000
+
+
+@dataclass
 class ReindexReport:
     indexed: int = 0
     errors: list[str] = field(default_factory=list)
@@ -100,10 +112,13 @@ class Library:
         self.files = FileStore(settings.data_dir)
         self.files.ensure_layout()
         self.index = Index(settings.db_path)
-        self.fetchers: dict[Kind, Fetcher] = fetchers or {
+        # Given fetchers override the defaults (tests swap in local-git ones).
+        defaults: dict[Kind, Fetcher] = {
             Kind.ARTICLE: ArticleFetcher(settings),
             Kind.GIT_REPO: GitRepoFetcher(settings),
+            Kind.DOCUMENT: DocumentFetcher(settings),
         }
+        self.fetchers = defaults | (fetchers or {})
         self._locks: dict[str, asyncio.Lock] = {}
         self._ingest_lock = asyncio.Lock()
         self.max_attempts = settings.worker.max_attempts
@@ -252,6 +267,106 @@ class Library:
             self.index.upsert(resource, [])
             job_id = self._enqueue("fetch", resource.id)
         return IngestResult(resource, duplicate=False, job_id=job_id)
+
+    async def ingest_file(
+        self,
+        filename: str,
+        chunks: AsyncIterator[bytes],
+        mime: str | None = None,
+        why: str | None = None,
+        tags: list[str] | None = None,
+        scope: Scope | None = None,
+        project: str | None = None,
+        created_by: str | None = None,
+    ) -> IngestResult:
+        """Save an uploaded document. Text is extracted in the background (ADR-0012)."""
+        max_bytes = self.settings.attachments.max_mb * 1_000_000
+        staging = self.files.new_staging_dir(f"upload-{new_id()}")
+        try:
+            tmp = staging / "upload.tmp"
+            size = 0
+            with tmp.open("wb") as fh:
+                async for block in chunks:
+                    size += len(block)
+                    if size > max_bytes:
+                        raise InvalidInput(f"file exceeds {self.settings.attachments.max_mb} MB")
+                    fh.write(block)
+            if size == 0:
+                raise InvalidInput("the file is empty")
+            sha = sha256_file(tmp)
+            canonical = f"urn:sha256:{sha}"
+            scope, project = _scope(scope, project)
+            async with self._ingest_lock:
+                existing = self.index.find_by_canonical_url(canonical)
+                if existing is not None:
+                    return IngestResult(self.files.read(existing), duplicate=True)
+                now = utcnow()
+                name = sanitize_filename(filename, default="document")
+                title = _title_from_filename(filename)
+                resource = Resource(
+                    id=new_id(),
+                    slug=unique_slug(title, self.index.slug_taken),
+                    kind=Kind.DOCUMENT,
+                    title=title,
+                    title_source=TitleSource.URL,
+                    canonical_url=canonical,
+                    why=why,
+                    tags=tags or [],
+                    scope=scope,
+                    project=project,
+                    fetch_status=FetchStatus.PENDING,
+                    captured_at=now,
+                    updated_at=now,
+                    created_by=created_by,
+                    source_file=Attachment(
+                        path=name,
+                        mime=(mime if mime and mime != "application/octet-stream" else None)
+                        or guess_mime(name),
+                        size=size,
+                        sha256=sha,
+                        added_at=now,
+                        added_by=created_by,
+                    ),
+                )
+                resource.status = Status.KEPT if resource.why else Status.INBOX
+                shutil.move(tmp, safe_join(self.files.source_dir(resource.id), name))
+                self.files.write(resource)
+                self.index.upsert(resource, [])
+                job_id = self._enqueue("fetch", resource.id)
+            return IngestResult(resource, duplicate=False, job_id=job_id)
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
+
+    async def import_urls(
+        self,
+        text: str,
+        why: str | None = None,
+        tags: list[str] | None = None,
+        project: str | None = None,
+        created_by: str | None = None,
+    ) -> ImportReport:
+        """Ingest every link in a plain list or a browser bookmarks export."""
+        report = ImportReport()
+        entries = parse_url_list(text)
+        if len(entries) > MAX_IMPORT:
+            report.errors.append(f"only the first {MAX_IMPORT} of {len(entries)} links imported")
+            entries = entries[:MAX_IMPORT]
+        for url, extra_tags, title in entries:
+            try:
+                result = await self.ingest(
+                    url,
+                    why=why,
+                    tags=[*(tags or []), *extra_tags],
+                    project=project,
+                    title=title,
+                    created_by=created_by,
+                )
+            except InvalidInput as exc:
+                report.errors.append(f"{url}: {exc}")
+                continue
+            target = report.duplicates if result.duplicate else report.created
+            target.append(result.resource.id)
+        return report
 
     async def create_note(
         self,
@@ -464,11 +579,11 @@ class Library:
             resource.fetch_status = FetchStatus.FETCHING
             self.files.write(resource)
             self.index.upsert(resource, None)
-        fetcher = self.fetchers.get(resource.kind)
-        if fetcher is None:
-            raise PermanentFetchError(f"no fetcher for kind {resource.kind}")
         staging = self.files.new_staging_dir(job.id)
         try:
+            fetcher = self.fetchers.get(resource.kind)
+            if fetcher is None:
+                raise PermanentFetchError(f"no fetcher for kind {resource.kind}")
             result = await fetcher.fetch(resource, staging)
         except BaseException as exc:
             shutil.rmtree(staging, ignore_errors=True)
@@ -494,10 +609,14 @@ class Library:
                 if duplicate:
                     meta["possible_duplicate_of"] = duplicate
             resource.meta = meta
-            if result.title and resource.title_source != TitleSource.HUMAN:
+            if (
+                result.title
+                and resource.title_source != TitleSource.HUMAN
+                and _useful_title(result.title)
+            ):
                 resource.title = result.title.strip()[:300]
                 resource.title_source = TitleSource.EXTRACTED
-                if first_snapshot and resource.kind == Kind.ARTICLE:
+                if first_snapshot and resource.kind in (Kind.ARTICLE, Kind.DOCUMENT):
                     # The slug was derived from the URL; now we know the real title.
                     resource.slug = unique_slug(
                         resource.title, lambda s: self.index.slug_taken(s, resource_id)
@@ -614,6 +733,44 @@ def _scope(scope: Scope | None, project: str | None) -> tuple[Scope, str | None]
     if scope == Scope.GLOBAL:
         project = None if project is None else project
     return scope, project
+
+
+_URL_IN_TEXT = re.compile(r"https?://[^\s<>\"']+")
+
+
+def parse_url_list(text: str) -> list[tuple[str, list[str], str | None]]:
+    """(url, tags, title) from a bookmarks HTML export or any text containing URLs."""
+    found: dict[str, tuple[str, list[str], str | None]] = {}
+    if re.search(r"<a\s[^>]*href=", text, flags=re.IGNORECASE):
+        import lxml.html
+
+        try:
+            tree = lxml.html.fromstring(text)
+        except ValueError, lxml.etree.ParserError:
+            tree = None
+        for a in tree.iter("a") if tree is not None else []:
+            href = (a.get("href") or "").strip()
+            if href.lower().startswith(("http://", "https://")):
+                tags = [t for t in (a.get("tags") or "").split(",") if t.strip()]
+                title = " ".join(a.text_content().split()) or None
+                found.setdefault(href, (href, tags, title))
+    for match in _URL_IN_TEXT.finditer(text):
+        url = match.group(0).rstrip(".,;:!?)]}")
+        found.setdefault(url, (url, [], None))
+    return list(found.values())
+
+
+def _useful_title(title: str) -> bool:
+    """PDF and Office metadata titles are often junk ("Microsoft Word - doc1.docx")."""
+    clean = title.strip().lower()
+    return len(clean) >= 3 and not clean.startswith(("microsoft word -", "untitled"))
+
+
+def _title_from_filename(filename: str) -> str:
+    base = filename.replace("\\", "/").rsplit("/", 1)[-1]
+    stem = base.rsplit(".", 1)[0] if "." in base else base
+    words = " ".join(stem.replace("_", " ").replace("-", " ").split())
+    return words[:200] or "Untitled document"
 
 
 def _title_from_url(url: str) -> str:

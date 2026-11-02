@@ -9,10 +9,11 @@
 </div>
 <div class="stats">
   <div class="card stat"><b>{{ stats.total }}</b><span>resources</span></div>
-  <div class="card stat"><b>{{ stats.kinds.get("article", 0) }}</b><span>articles</span></div>
-  <div class="card stat"><b>{{ stats.kinds.get("git_repo", 0) }}</b><span>repositories</span></div>
-  <div class="card stat"><b>{{ stats.kinds.get("note", 0) }}</b><span>notes</span></div>
-  <div class="card stat"><b>{{ stats.week }}</b><span>added this week</span></div>
+  <a class="card stat" href="/?kind=article"><b>{{ stats.kinds.get("article", 0) }}</b><span>articles</span></a>
+  <a class="card stat" href="/?kind=git_repo"><b>{{ stats.kinds.get("git_repo", 0) }}</b><span>repositories</span></a>
+  <a class="card stat" href="/?kind=document"><b>{{ stats.kinds.get("document", 0) }}</b><span>documents</span></a>
+  <a class="card stat" href="/?kind=note"><b>{{ stats.kinds.get("note", 0) }}</b><span>notes</span></a>
+  <a class="card stat" href="/activity"><b>{{ stats.week }}</b><span>added this week</span></a>
   <div class="card stat"><b>{{ stats.bytes | filesize }}</b><span>archived</span></div>
 </div>
 {% if stats.failed %}<div class="notice warn">{{ stats.failed }} resource{{ "s" if stats.failed > 1 }} failed to fetch. <a href="/activity?status=failed">See activity</a>.</div>{% endif %}
@@ -29,7 +30,7 @@
   <div class="filters">
     <select name="kind" aria-label="Kind">
       <option value="">All kinds</option>
-      {% for k, label in [("article", "Articles"), ("git_repo", "Repositories"), ("note", "Notes")] %}
+      {% for k, label in [("article", "Articles"), ("git_repo", "Repositories"), ("document", "Documents"), ("note", "Notes")] %}
       <option value="{{ k }}" {{ "selected" if kind == k }}>{{ label }}</option>{% endfor %}
     </select>
     <select name="status" aria-label="Status">

@@ -106,6 +106,66 @@ def add(
 
 
 @app.command()
+def upload(
+    files: Annotated[list[Path], typer.Argument(help="PDF, DOCX, EPUB, HTML, Markdown, text…")],
+    why: str | None = None,
+    tag: Annotated[list[str] | None, typer.Option()] = None,
+    project: str | None = None,
+    now: Annotated[bool, typer.Option("--now", help="Extract in this process")] = False,
+) -> None:
+    """Save documents. Text is extracted in the background (or now, with --now)."""
+    _logging("WARNING")
+    library = _library()
+
+    async def chunks(path: Path):  # type: ignore[no-untyped-def]
+        with path.open("rb") as fh:
+            while block := fh.read(1 << 20):
+                yield block
+
+    async def run() -> None:
+        for path in files:
+            if not path.is_file():
+                typer.secho(f"skipped {path}: not a file", fg="yellow", err=True)
+                continue
+            try:
+                result = await library.ingest_file(
+                    path.name, chunks(path), why=why, tags=tag or [], project=project,
+                    created_by="cli",
+                )  # fmt: skip
+            except InvalidInput as exc:
+                typer.secho(f"{path}: {exc}", fg="red", err=True)
+                continue
+            word = "Already saved" if result.duplicate else "Saved"
+            typer.echo(f"{word}: {result.resource.slug} ({result.resource.id})")
+        if now:
+            from alexandria.jobs import Worker
+
+            await Worker(library).drain(timeout=3600)
+
+    asyncio.run(run())
+
+
+@app.command("import")
+def import_(
+    source: Annotated[Path, typer.Argument(help="Text with URLs, or a bookmarks .html export")],
+    why: str | None = None,
+    tag: Annotated[list[str] | None, typer.Option()] = None,
+    project: str | None = None,
+) -> None:
+    """Save every link in a file."""
+    _logging("WARNING")
+    library = _library()
+    text = source.read_text(encoding="utf-8", errors="replace")
+    report = asyncio.run(library.import_urls(text, why, tag or [], project, "cli"))
+    for error in report.errors:
+        typer.secho(error, fg="yellow", err=True)
+    typer.echo(
+        f"{len(report.created)} saved, {len(report.duplicates)} already there, "
+        f"{len(report.errors)} rejected. Fetches are queued."
+    )
+
+
+@app.command()
 def note(
     title: str,
     body_file: Annotated[Path | None, typer.Option(help="Markdown file; '-' for stdin")] = None,

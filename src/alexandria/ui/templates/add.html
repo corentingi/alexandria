@@ -1,13 +1,54 @@
 {% extends "base.html" %}
+{% from "_macros.html" import icon %}
 {% block title %}Add{% endblock %}
 {% block content %}
-<div class="page-head"><div><h1>Add to the library</h1><p>A link is fetched and archived in the background. A note is saved as is.</p></div></div>
+<div class="page-head"><div><h1>Add to the library</h1><p>Links and files are archived and indexed in the background; the originals are always kept.</p></div></div>
 <nav class="tabs">
-  <a href="/add" class="{{ 'on' if tab != 'note' }}">Link</a>
+  <a href="/add" class="{{ 'on' if tab not in ('note', 'file', 'import') }}">Link</a>
+  <a href="/add?tab=file" class="{{ 'on' if tab == 'file' }}">Files</a>
   <a href="/add?tab=note" class="{{ 'on' if tab == 'note' }}">Note</a>
+  <a href="/add?tab=import" class="{{ 'on' if tab == 'import' }}">Import links</a>
 </nav>
 {% if error %}<div class="notice bad" role="alert">{{ error }}</div>{% endif %}
-{% if tab != "note" %}
+{% if tab == "file" %}
+<form class="card pad" method="post" action="/upload" enctype="multipart/form-data">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <label class="dropzone">
+    {{ icon("upload", 30) }}
+    <b>Drop files here, or click to choose</b>
+    <span class="small">Text is extracted from these formats; anything else is kept as is.</span>
+    <span class="formats"><span class="tag">PDF</span><span class="tag">DOCX</span><span class="tag">EPUB</span><span class="tag">HTML</span><span class="tag">Markdown</span><span class="tag">Text</span></span>
+    <span class="files-chosen"></span>
+    <input type="file" name="files" multiple required aria-label="Files">
+  </label>
+  <label class="field"><span>Why?</span>
+    <textarea name="why" rows="2" placeholder="Applies to every file. Without a reason they wait in the inbox."></textarea>
+  </label>
+  <div class="grid2">
+    <label class="field"><span>Tags</span><input type="text" name="tags" placeholder="papers, 2026"></label>
+    <label class="field"><span>Project</span><input type="text" name="project" placeholder="Optional"></label>
+  </div>
+  <div class="row end"><a class="btn ghost" href="/">Cancel</a><button class="btn primary" type="submit">Upload</button></div>
+</form>
+{% elif tab == "import" %}
+<form class="card pad" method="post" action="/import" enctype="multipart/form-data">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <label class="field"><span>Links</span>
+    <textarea name="text" rows="8" placeholder="Paste anything containing URLs: one per line, a Markdown list, an email…"></textarea>
+  </label>
+  <label class="field"><span>…or a bookmarks export</span>
+    <input type="file" name="bookmarks" accept=".html,.htm,.txt,.md">
+    <small>The HTML file exported by Firefox, Chrome, Safari or Pinboard. Their tags are kept.</small>
+  </label>
+  <label class="field"><span>Why?</span><input type="text" name="why" placeholder="Optional; applies to every link"></label>
+  <div class="grid2">
+    <label class="field"><span>Tags</span><input type="text" name="tags" placeholder="imported"></label>
+    <label class="field"><span>Project</span><input type="text" name="project" placeholder="Optional"></label>
+  </div>
+  <p class="small muted">Links already in the library are skipped; private addresses are rejected.</p>
+  <div class="row end"><a class="btn ghost" href="/">Cancel</a><button class="btn primary" type="submit">Import</button></div>
+</form>
+{% elif tab != "note" %}
 <form class="card pad" method="post" action="/add">
   <input type="hidden" name="csrf" value="{{ csrf }}">
   <label class="field"><span>URL</span>

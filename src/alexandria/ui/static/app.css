@@ -21,6 +21,7 @@
   --article: #2c4c9c;
   --repo: #6b3fa0;
   --note: #2f7d4f;
+  --document: #a5531f;
   --radius: 10px;
   --radius-sm: 6px;
   --shadow: 0 1px 2px rgba(40, 30, 10, .06), 0 2px 8px rgba(40, 30, 10, .05);
@@ -52,6 +53,7 @@
     --article: #8aa6f0;
     --repo: #c39cf0;
     --note: #6fcf97;
+    --document: #f0a46c;
     --shadow: 0 1px 2px rgba(0, 0, 0, .3);
     color-scheme: dark;
   }
@@ -176,6 +178,7 @@ section.card + section.card { margin-top: 16px; }
 .kind.article { color: var(--article); background: var(--accent-soft); }
 .kind.git_repo { color: var(--repo); background: color-mix(in srgb, var(--repo) 14%, transparent); }
 .kind.note { color: var(--note); background: var(--ok-soft); }
+.kind.document { color: var(--document); background: color-mix(in srgb, var(--document) 14%, transparent); }
 .tag {
   display: inline-block; padding: 1px 9px; border-radius: 999px; border: 1px solid var(--line-2);
   color: var(--ink-2); font-size: .78rem; font-weight: 500;
@@ -301,3 +304,48 @@ details.edit[open] > summary { margin-bottom: 12px; }
 .btn.block { width: 100%; justify-content: center; }
 .cloud a.tag-l { font-size: 1.2rem; font-weight: 550; }
 .cloud a.tag-xl { font-size: 1.5rem; font-weight: 650; color: var(--ink); }
+
+/* ---- stats as filters ------------------------------------------------------- */
+a.stat { color: var(--ink); transition: border-color .15s, transform .15s; }
+a.stat:hover { text-decoration: none; border-color: var(--accent); transform: translateY(-1px); }
+
+/* ---- drop zone -------------------------------------------------------------- */
+.dropzone {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 34px 20px; border: 2px dashed var(--line-2); border-radius: var(--radius);
+  background: var(--surface-2); color: var(--ink-2); text-align: center; cursor: pointer;
+  margin-bottom: 14px; transition: border-color .15s, background .15s;
+}
+.dropzone:hover, .dropzone.over { border-color: var(--accent); background: var(--accent-soft); }
+.dropzone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.dropzone svg { color: var(--accent); }
+.dropzone .files-chosen { font-size: .85rem; color: var(--ink); font-weight: 550; }
+.formats { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; margin-top: 4px; }
+
+/* ---- chart -------------------------------------------------------------------- */
+.chart { width: 100%; height: auto; display: block; }
+.chart rect.article { fill: var(--article); }
+.chart rect.git_repo { fill: var(--repo); }
+.chart rect.note { fill: var(--note); }
+.chart rect.document { fill: var(--document); }
+.chart rect.track { fill: var(--surface-2); }
+.chart rect:hover { opacity: .8; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: .8rem; color: var(--ink-2); margin-top: 10px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+.legend i.article { background: var(--article); } .legend i.git_repo { background: var(--repo); }
+.legend i.note { background: var(--note); } .legend i.document { background: var(--document); }
+.counters { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+@media (max-width: 640px) { .counters { grid-template-columns: repeat(2, 1fr); } }
+.counters a { padding: 14px 16px; color: var(--ink); }
+.counters a:hover { text-decoration: none; border-color: var(--accent); }
+.counters a.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.counters b { display: block; font-family: var(--serif); font-size: 1.5rem; line-height: 1.1; }
+.counters span { font-size: .82rem; color: var(--ink-3); }
+.counters .failed b { color: var(--bad); }
+.counters .running b { color: var(--warn); }
+.two-col { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 16px; margin-bottom: 16px; align-items: start; }
+@media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
+.feed { list-style: none; margin: 0; padding: 0; }
+.feed li { display: flex; gap: 10px; align-items: center; padding: 7px 0; border-bottom: 1px dashed var(--line); font-size: .88rem; }
+.feed li:last-child { border-bottom: 0; }
+.feed a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }

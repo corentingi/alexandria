@@ -33,6 +33,10 @@ changes data. `views.py` holds the JSON shapes shared by REST and MCP.
 The CLI (`alexandria add`) writes the same files and the same queue; a running server's
 worker picks the job up (same SQLite file, WAL mode). `--now` runs it in-process.
 
+Documents (ADR-0012): `Library.ingest_file` stores the upload in `source/`, keyed by its
+SHA-256 (`canonical_url = urn:sha256:…`), and enqueues the same `fetch` job; for a
+document, the fetcher extracts text from `source/` into a new snapshot.
+
 ## Read path
 
 `Index.search` queries `resources_fts` (title ×5, why ×3, tags ×3, notes ×2, meta text ×1)
@@ -59,7 +63,8 @@ See DESIGN.md §5. Additions: `tokens.yaml` (ADR-0003), `session_secret`, and th
 | `storage/files.py` | Folder layout, atomic writes, frontmatter (de)serialization |
 | `storage/index.py` | SQLite schema, upserts, rebuild, search, job queue |
 | `chunking.py` | Deterministic Markdown chunking |
-| `fetchers/` | `base.download` (guarded streaming GET), article, git, attachment |
+| `extract.py` | Text extraction: PDF (pypdf), DOCX, EPUB, HTML, Markdown, text (ADR-0012) |
+| `fetchers/` | `base.download` (guarded streaming GET), article, git, document, attachment |
 | `library.py` | All operations + job handlers |
 | `jobs.py` | Worker loop, retries |
 | `auth.py` | Token store and scopes |

@@ -13,6 +13,7 @@ from trafilatura.metadata import extract_metadata
 
 from alexandria.config import Settings
 from alexandria.fetchers.base import SnapshotResult, download
+from alexandria.fetchers.document import extract_to
 from alexandria.models import Resource
 from alexandria.storage.files import describe_file
 
@@ -58,6 +59,14 @@ class ArticleFetcher:
             original = staging_dir / f"original{ext or _ext_from_url(result.final_url)}"
             body_path.rename(original)
             artifacts.append(describe_file(original, "original"))
+            # PDF, DOCX, EPUB, plain text…: extract text when we can (the original stays).
+            doc = await extract_to(
+                original, staging_dir, result.final_url.rsplit("/", 1)[-1], content_type,
+                result.final_url,
+            )  # fmt: skip
+            artifacts.extend(doc.artifacts)
+            meta.update(doc.meta)
+            title, text_role = doc.title, doc.text_role
 
         fetch_json = staging_dir / "fetch.json"
         fetch_json.write_text(json.dumps(result.fetch_json(url), indent=2), encoding="utf-8")

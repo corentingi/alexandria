@@ -7,7 +7,8 @@
   <div class="grow">
     <h1>{{ r.title }}</h1>
     <div class="row small muted">
-      {% if r.canonical_url %}<a href="{{ r.canonical_url }}" rel="noopener noreferrer nofollow" target="_blank">{{ r.canonical_url | host }}{{ icon("external", 13) }}</a>{% endif %}
+      {% if r.source_file %}<a href="/r/{{ r.slug }}/files/source/{{ r.source_file.path }}">{{ icon("download", 13) }} {{ r.source_file.path }}</a> <span>{{ r.source_file.size | filesize }}</span>
+      {% elif r.canonical_url %}<a href="{{ r.canonical_url }}" rel="noopener noreferrer nofollow" target="_blank">{{ r.canonical_url | host }}{{ icon("external", 13) }}</a>{% endif %}
       <span title="{{ captured }}">saved {{ r.captured_at | ago }}{% if r.created_by %} by {{ r.created_by }}{% endif %}</span>
       {{ status_badge(r.status.value) }}
       {% include "_fetch_status.html" %}
@@ -20,7 +21,10 @@
 <div class="notice bad"><b>Last fetch failed:</b> {{ r.fetch_error }}</div>
 {% endif %}
 {% if duplicate_of %}<div class="notice warn">The content looks identical to <a href="/r/{{ duplicate_of.slug }}">{{ duplicate_of.title }}</a>.</div>{% endif %}
-{% if r.meta.get("extraction") == "poor" %}<div class="notice warn">Little text could be extracted from this page (it may need JavaScript). The raw HTML is archived.</div>{% endif %}
+{% set ex = r.meta.get("extraction") %}
+{% if ex == "poor" %}<div class="notice warn">Little text could be extracted{% if r.kind.value == "document" or r.meta.get("format") %} (a scanned document without a text layer?){% else %} from this page (it may need JavaScript){% endif %}. The original is archived.</div>
+{% elif ex == "unsupported" %}<div class="notice warn">Text is not extracted from this kind of file yet. The original is kept and can be analysed later.</div>
+{% elif ex == "failed" %}<div class="notice warn">The file could not be read: {{ r.meta.get("extraction_error") }}. The original is kept.</div>{% endif %}
 
 <div class="r-layout">
   <div>
@@ -38,10 +42,10 @@
     </section>
 
     <section class="card pad">
-      <div class="row"><h2 class="grow">{% if r.kind.value == "note" %}Note{% elif content_role == "readme" %}README{% else %}Content{% endif %}</h2>
+      <div class="row"><h2 class="grow">{% if r.kind.value == "note" %}Note{% elif content_role == "readme" %}README{% elif r.kind.value == "document" %}Extracted text{% else %}Content{% endif %}</h2>
         {% if r.snapshots|length > 1 and shown %}<span class="small muted">snapshot {{ shown.id | snapdate }}{% if shown.id != r.current_snapshot %} · <a href="/r/{{ r.slug }}">see current</a>{% endif %}</span>{% endif %}
       </div>
-      {% if r.kind.value != "note" and content %}<div class="untrusted-label">{{ icon("shield", 14) }} Fetched from the source; shown as data. Links open in a new tab, images are not loaded.</div>{% endif %}
+      {% if r.kind.value != "note" and content %}<div class="untrusted-label">{{ icon("shield", 14) }} {{ "Extracted from the file" if r.kind.value == "document" else "Fetched from the source" }}; shown as data. Links open in a new tab, images are not loaded.</div>{% endif %}
       {% if r.kind.value == "note" %}
         <details class="edit">
           <summary class="btn sm">Edit note</summary>
@@ -95,7 +99,7 @@
           {% endif %}
         {% endfor %}
         {% if r.kind.value != "note" and user.can(ScopeLevel.WRITE) %}
-          <form method="post" action="/r/{{ r.slug }}/refetch"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn sm" type="submit">{{ icon("refresh", 14) }} Re-fetch</button></form>
+          <form method="post" action="/r/{{ r.slug }}/refetch"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn sm" type="submit">{{ icon("refresh", 14) }} {{ "Re-extract" if r.kind.value == "document" else "Re-fetch" }}</button></form>
         {% endif %}
       </div>
     </section>
@@ -105,7 +109,7 @@
     <section class="card pad">
       <p class="section-title">Metadata</p>
       <dl class="kv">
-        {% for key, label in [("description", "About"), ("author", "Author"), ("published_at", "Published"), ("sitename", "Site"), ("language", "Language"), ("license", "License"), ("stars", "Stars"), ("default_branch", "Branch"), ("pushed_at", "Last push"), ("size_kb", "Size"), ("content_type", "Type"), ("archive_skipped", "Archive"), ("final_url", "Redirected to")] if m.get(key) is not none and m.get(key) != "" %}
+        {% for key, label in [("description", "About"), ("author", "Author"), ("published_at", "Published"), ("sitename", "Site"), ("language", "Language"), ("license", "License"), ("stars", "Stars"), ("default_branch", "Branch"), ("pushed_at", "Last push"), ("size_kb", "Size"), ("content_type", "Type"), ("format", "Format"), ("pages", "Pages"), ("chapters", "Chapters"), ("archive_skipped", "Archive"), ("final_url", "Redirected to")] if m.get(key) is not none and m.get(key) != "" %}
           <dt>{{ label }}</dt><dd>{% if key == "size_kb" %}{{ (m[key] * 1024) | filesize }}{% else %}{{ m[key] }}{% endif %}</dd>
         {% endfor %}
         {% if m.get("topics") %}<dt>Topics</dt><dd><div class="tags">{% for t in m.topics %}<span class="tag">{{ t }}</span>{% endfor %}</div></dd>{% endif %}
@@ -162,7 +166,7 @@
     <section class="card pad">
       <p class="section-title">History</p>
       <ul class="timeline">
-        {% for j in jobs %}<li><b>{{ j.type | replace("_", " ") }}</b> <span class="badge {{ {'done': 'ok', 'failed': 'bad', 'running': 'warn', 'queued': 'warn'}[j.status] }}">{{ j.status }}</span><br><span class="muted small">{{ j.updated_at | ago }}{% if j.attempts > 1 %} · {{ j.attempts }} attempts{% endif %}</span>{% if j.error and j.status != "done" %}<div class="small muted">{{ j.error }}</div>{% endif %}</li>{% endfor %}
+        {% for j in jobs %}<li><b>{{ {"fetch": ("extract" if r.kind.value == "document" else "fetch"), "attach_url": "attachment download", "reindex_resource": "re-index"}.get(j.type, j.type) }}</b> <span class="badge {{ {'done': 'ok', 'failed': 'bad', 'running': 'warn', 'queued': 'warn'}[j.status] }}">{{ j.status }}</span><br><span class="muted small">{{ j.updated_at | ago }}{% if j.attempts > 1 %} · {{ j.attempts }} attempts{% endif %}</span>{% if j.error and j.status != "done" %}<div class="small muted">{{ j.error }}</div>{% endif %}</li>{% endfor %}
       </ul>
     </section>
     {% endif %}

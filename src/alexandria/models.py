@@ -16,6 +16,7 @@ class Kind(StrEnum):
     ARTICLE = "article"
     GIT_REPO = "git_repo"
     NOTE = "note"
+    DOCUMENT = "document"  # an uploaded file (PDF, DOCX, EPUB, text…), kept in source/
 
 
 class Status(StrEnum):
@@ -105,6 +106,8 @@ class Resource(BaseModel):
     current_snapshot: str | None = None
     snapshots: list[Snapshot] = Field(default_factory=list)
     attachments: list[Attachment] = Field(default_factory=list)
+    # For documents: the uploaded original, stored in source/ (ADR-0012).
+    source_file: Attachment | None = None
     generated: dict[str, Any] = Field(default_factory=dict)
     # The Markdown body of resource.md: human notes (for a note, the note itself).
     notes: str = Field(default="", exclude=True)
@@ -155,6 +158,15 @@ class ArticleMeta(BaseModel):
     extraction: str | None = None
 
 
+class DocumentMeta(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    format: str | None = None
+    extraction: str | None = None
+    pages: int | None = None
+    author: str | None = None
+
+
 class GitRepoMeta(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -175,6 +187,7 @@ class GitRepoMeta(BaseModel):
 _META_SCHEMAS: dict[Kind, type[BaseModel]] = {
     Kind.ARTICLE: ArticleMeta,
     Kind.GIT_REPO: GitRepoMeta,
+    Kind.DOCUMENT: DocumentMeta,
 }
 
 

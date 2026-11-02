@@ -15,6 +15,16 @@
 | 9 | Re-fetch → second snapshot, first kept | `TestArticle::test_refetch_keeps_old_snapshot` |
 | 10 | Suite runs without network | `conftest.py` blocks sockets and DNS for every test |
 
+## Beyond the design
+
+| Feature | Verified by |
+| ------- | ----------- |
+| Documents: upload, extract (PDF, DOCX, EPUB, HTML, MD, text), dedupe by hash, re-extract | `test_documents.py`, `TestDocumentsAndImport`; by hand in Chrome (upload of 4 files) |
+| PDF/DOCX/EPUB behind a URL are extracted | `TestDocuments::test_pdf_url_is_extracted` |
+| Hostile files: zip bomb, XML entities, corrupt PDF, binary-as-text | `TestExtract` |
+| Bulk import from text and bookmarks exports | `TestImport`, `TestDocumentsAndImport`; by hand |
+| Activity dashboard: 30-day capture chart, latest captures, live job table | by hand in Chrome |
+
 ## Known limits
 
 - DNS-rebinding TOCTOU between the SSRF check and the connection (ADR-0007).
@@ -22,6 +32,9 @@
 - Git clone timeout falls back to shallow on *any* non-"not found" failure, not only size.
 - No incremental `git fetch` on re-fetch: each snapshot is a full new clone.
 - `stars`, `topics`… are refreshed only on re-fetch.
+- No OCR: scanned PDFs are kept and flagged `extraction: poor`. No text from attachments
+  (they are stored and downloadable, not indexed).
+- MCP cannot upload files (agents pass a URL to `ingest_url` instead).
 
 ## Next steps
 

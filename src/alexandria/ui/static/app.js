@@ -43,4 +43,26 @@
     var button = event.target.closest("[data-confirm]");
     if (button && !window.confirm(button.getAttribute("data-confirm"))) event.preventDefault();
   });
+
+  // Drop zones: show chosen file names and highlight while dragging.
+  document.addEventListener("change", function (event) {
+    var input = event.target;
+    if (!input.matches || !input.matches(".dropzone input[type=file]")) return;
+    var out = input.closest(".dropzone").querySelector(".files-chosen");
+    if (!out) return;
+    var names = Array.prototype.map.call(input.files, function (f) { return f.name; });
+    out.textContent = names.length ? names.length + " file(s): " + names.join(", ") : "";
+  });
+  ["dragenter", "dragover"].forEach(function (type) {
+    document.addEventListener(type, function (event) {
+      var zone = event.target.closest && event.target.closest(".dropzone");
+      if (zone) zone.classList.add("over");
+    });
+  });
+  ["dragleave", "drop"].forEach(function (type) {
+    document.addEventListener(type, function (event) {
+      var zone = event.target.closest && event.target.closest(".dropzone");
+      if (zone) zone.classList.remove("over");
+    });
+  });
 })();

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -110,6 +110,47 @@ async def ingest(body: IngestBody, c: Ctx, who: Writer) -> JSONResponse:
         "duplicate": result.duplicate,
     }
     return JSONResponse(payload, status_code=200 if result.duplicate else 202)
+
+
+@router.post("/documents", status_code=202)
+async def upload_document(
+    c: Ctx,
+    who: Writer,
+    file: Annotated[UploadFile, File()],
+    why: Annotated[str | None, Form()] = None,
+    tags: Annotated[str | None, Form(description="comma or space separated")] = None,
+    project: Annotated[str | None, Form()] = None,
+) -> JSONResponse:
+    """Upload a PDF, DOCX, EPUB, HTML, Markdown or text file (any file is kept)."""
+    result = await c.library.ingest_file(
+        file.filename or "document",
+        _chunks(file),
+        file.content_type,
+        why=why,
+        tags=(tags or "").replace(",", " ").split(),
+        project=project,
+        created_by=who.name,
+    )
+    c.enqueued()
+    r = result.resource
+    payload = {"id": r.id, "slug": r.slug, "status": r.status.value,
+               "fetch_status": r.fetch_status.value, "duplicate": result.duplicate}  # fmt: skip
+    return JSONResponse(payload, status_code=200 if result.duplicate else 202)
+
+
+class ImportBody(_Strict):
+    text: str
+    why: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    project: str | None = None
+
+
+@router.post("/import")
+async def import_urls(body: ImportBody, c: Ctx, who: Writer) -> dict[str, Any]:
+    """Ingest every URL in a text, or in a browser bookmarks export (HTML)."""
+    report = await c.library.import_urls(body.text, body.why, body.tags, body.project, who.name)
+    c.enqueued()
+    return {"created": report.created, "duplicates": report.duplicates, "errors": report.errors}
 
 
 @router.post("/notes", status_code=201)

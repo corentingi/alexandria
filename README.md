@@ -7,13 +7,19 @@ it. Agents read and write through MCP, you use a small web UI. One container, on
 - **Articles** — raw HTML, extracted Markdown, metadata, full-text search.
 - **Git repositories** — a bare clone (full history, or the last 1,000 commits for huge
   repos) packed as `repository.git.tar.gz`, plus GitHub metadata and README.
+- **Documents** — upload PDF, DOCX, EPUB, HTML, Markdown or text; the original is kept and
+  its text extracted and indexed (links to such files get the same treatment). Any other
+  file is kept too, ready to be analysed later.
 - **Notes** — Markdown, searchable at once.
+- **Bulk import** — paste links or upload a browser bookmarks export.
 - **Files are the truth** — every resource is a folder with a `resource.md`; the SQLite
   index can be deleted and rebuilt.
 
 ## Status
 
-PoC, v1 feature-complete against the [design](docs/DESIGN.md). All ten acceptance criteria
+PoC, v1 feature-complete against the [design](docs/DESIGN.md), plus documents and bulk
+import ([ADR-0012](docs/adrs/0012-documents-and-text-extraction.md),
+[ADR-0013](docs/adrs/0013-bulk-link-import.md)). All ten acceptance criteria
 are covered by tests or were checked by hand (see [docs/STATUS.md](docs/STATUS.md)).
 
 ## Run it
@@ -40,7 +46,9 @@ Tools: `search`, `get_resource`, `get_content`, `list_recent`, `list_tags` (read
 `ingest_url`, `create_note`, `update_resource`, `attach_url`, `refetch` (write). Fetched
 text is returned under `untrusted_content`.
 
-REST API at `/api/v1` (docs at `/api/docs`). The UI's Settings page has a bookmarklet.
+REST API at `/api/v1` (docs at `/api/docs`), including `POST /documents` (multipart) and
+`POST /import`. The UI's Settings page has a bookmarklet. CLI: `alexandria add <url>`,
+`alexandria upload <files…>`, `alexandria import <bookmarks.html>`, `alexandria note`.
 
 ## Restore a repository archive
 

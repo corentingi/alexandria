@@ -31,7 +31,7 @@ _KEY_ORDER = [
     "id", "slug", "kind", "title", "title_source", "source_url", "canonical_url", "why",
     "tags", "scope", "project", "status", "fetch_status", "fetch_error", "captured_at",
     "updated_at", "created_by", "meta", "current_snapshot", "snapshots", "attachments",
-    "generated",
+    "source_file", "generated",
 ]  # fmt: skip
 
 
@@ -139,12 +139,17 @@ class FileStore:
         path.mkdir(parents=True, exist_ok=True)
         return path
 
+    def source_dir(self, resource_id: str) -> Path:
+        path = self.resource_dir(resource_id) / "source"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
     def file_path(self, resource_id: str, relative: str) -> Path:
-        """Resolve a download path (``snapshots/<ts>/<file>`` or ``attachments/<file>``)."""
+        """Resolve a download path under ``snapshots/``, ``attachments/`` or ``source/``."""
         root = self.resource_dir(resource_id)
         path = safe_join(root, relative)
         top = path.relative_to(root.resolve()).parts[:1]
-        if top not in (("snapshots",), ("attachments",)) or not path.is_file():
+        if top not in (("snapshots",), ("attachments",), ("source",)) or not path.is_file():
             raise FileNotFoundError(relative)
         return path
 

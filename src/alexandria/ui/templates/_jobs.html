@@ -6,7 +6,7 @@
   <tbody>
   {% for j in jobs %}{% set row = rows.get(j.resource_id) %}
     <tr>
-      <td class="nowrap"><b>{{ {"fetch": "Fetch", "attach_url": "Download attachment", "reindex_resource": "Re-index"}.get(j.type, j.type) }}</b>
+      <td class="nowrap"><b>{{ {"fetch": ("Extract" if row and row.kind == "document" else "Fetch"), "attach_url": "Download attachment", "reindex_resource": "Re-index"}.get(j.type, j.type) }}</b>
         {% if j.payload.get("url") %}<div class="small muted">{{ j.payload.url | host }}</div>{% endif %}</td>
       <td>{% if row %}<div class="row">{{ kind_icon(row.kind, 14) }}<a class="grow" href="/r/{{ row.slug }}">{{ row.title }}</a></div>{% else %}<span class="muted">deleted</span>{% endif %}
         {% if j.error %}<div class="err">{{ j.error }}</div>{% endif %}</td>

@@ -117,6 +117,16 @@ def resource_detail(
                 )
                 for a in resource.attachments
             ],
+            "source_file": _compact(
+                {
+                    "path": f"source/{resource.source_file.path}",
+                    "mime": resource.source_file.mime,
+                    "size": resource.source_file.size,
+                    "sha256": resource.source_file.sha256,
+                }
+            )
+            if resource.source_file
+            else None,
             "chunks": [
                 _compact({"ord": c["ord"], "heading_path": c["heading_path"], "chars": c["chars"]})
                 for c in chunks

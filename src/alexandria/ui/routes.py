@@ -11,7 +11,7 @@ import hashlib
 import hmac
 import math
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any
 from urllib.parse import quote, urlencode, urlsplit
@@ -22,6 +22,7 @@ from fastapi.templating import Jinja2Templates
 from itsdangerous import BadSignature, URLSafeSerializer
 from markdown_it import MarkdownIt
 from markupsafe import Markup, escape
+from starlette.datastructures import UploadFile as StarletteUpload
 
 from alexandria import __version__
 from alexandria.auth import Principal, ScopeLevel
@@ -424,6 +425,67 @@ async def add_note(
     return back(f"/r/{note.slug}", notice="Note saved.")
 
 
+@router.post("/upload", dependencies=[Csrf])
+async def upload(
+    request: Request,
+    c: Ctx,
+    who: User,
+    why: Annotated[str, Form()] = "",
+    tags: Annotated[str, Form()] = "",
+    project: Annotated[str, Form()] = "",
+) -> Response:
+    need(who, ScopeLevel.WRITE)
+    form = await request.form()
+    files = [f for f in form.getlist("files") if isinstance(f, StarletteUpload) and f.filename]
+    if not files:
+        return back("/add?tab=file", error="Choose at least one file.")
+    saved, duplicates, errors = [], 0, []
+    for file in files:
+        try:
+            result = await c.library.ingest_file(
+                file.filename or "document", _chunks(file), file.content_type,
+                why=why or None, tags=_split_tags(tags), project=project or None,
+                created_by=who.name,
+            )  # fmt: skip
+        except InvalidInput as exc:
+            errors.append(f"{file.filename}: {exc}")
+            continue
+        duplicates += result.duplicate
+        saved.append(result.resource)
+    c.enqueued()
+    if len(saved) == 1 and not errors:
+        note = "Already in the library." if duplicates else "Saved. Extracting text…"
+        return back(f"/r/{saved[0].slug}", notice=note)
+    notice = f"{len(saved) - duplicates} document(s) saved, {duplicates} already there."
+    return back("/activity", notice=notice, error="; ".join(errors) or None)
+
+
+@router.post("/import", dependencies=[Csrf])
+async def import_links(
+    request: Request,
+    c: Ctx,
+    who: User,
+    text: Annotated[str, Form()] = "",
+    why: Annotated[str, Form()] = "",
+    tags: Annotated[str, Form()] = "",
+    project: Annotated[str, Form()] = "",
+) -> Response:
+    need(who, ScopeLevel.WRITE)
+    form = await request.form()
+    upload = form.get("bookmarks")
+    if isinstance(upload, StarletteUpload) and upload.filename:
+        text += "\n" + (await upload.read(20_000_000)).decode("utf-8", errors="replace")
+    if not text.strip():
+        return back("/add?tab=import", error="Paste some links or choose a bookmarks file.")
+    report = await c.library.import_urls(
+        text, why or None, _split_tags(tags), project or None, who.name
+    )
+    c.enqueued()
+    notice = (f"{len(report.created)} link(s) saved, {len(report.duplicates)} already there, "
+              f"{len(report.errors)} rejected.")  # fmt: skip
+    return back("/activity", notice=notice, error="; ".join(report.errors[:5]) or None)
+
+
 def _split_tags(raw: str) -> list[str]:
     return [t for t in raw.replace(",", " ").split() if t]
 
@@ -565,7 +627,7 @@ async def attach(
     return back(f"/r/{ref}", error="Choose a file or give a URL.")
 
 
-async def _chunks(file: UploadFile) -> AsyncIterator[bytes]:
+async def _chunks(file: StarletteUpload) -> AsyncIterator[bytes]:
     while block := await file.read(1 << 20):
         yield block
 
@@ -607,7 +669,49 @@ async def activity(request: Request, c: Ctx, who: User, status: str | None = Non
     data: dict[str, Any] = {"jobs": jobs, "rows": rows, "status": status or "", "counts": counts}
     if request.headers.get("hx-request") and request.headers.get("hx-target") == "jobs":
         return render(request, "_jobs.html", **data)
+    data["chart"] = _capture_chart(c)
+    data["recent"] = c.library.search("", SearchFilters(), 8)
     return render(request, "activity.html", **data)
+
+
+CHART_DAYS = 30
+CHART_KINDS = ("article", "git_repo", "document", "note")
+
+
+def _capture_chart(c: AppContext) -> dict[str, Any]:
+    """Resources captured per day and kind over the last 30 days, as SVG-ready bars."""
+    with c.library.index.read() as db:
+        rows = db.execute(
+            "SELECT substr(captured_at, 1, 10) AS day, kind, count(*) AS n FROM resources "
+            "WHERE captured_at >= date('now', ?) GROUP BY day, kind",
+            (f"-{CHART_DAYS - 1} days",),
+        ).fetchall()
+    today = datetime.now(UTC).date()
+    days = [(today - timedelta(days=CHART_DAYS - 1 - i)).isoformat() for i in range(CHART_DAYS)]
+    counts = {(r["day"], r["kind"]): r["n"] for r in rows}
+    totals = [sum(counts.get((d, k), 0) for k in CHART_KINDS) for d in days]
+    top = max(totals, default=0) or 1
+    height, width, gap = 120.0, 18.0, 4.0
+    bars = []
+    for i, day in enumerate(days):
+        y = height
+        for kind in CHART_KINDS:
+            n = counts.get((day, kind), 0)
+            if not n:
+                continue
+            h = height * n / top
+            y -= h
+            bars.append({"x": i * (width + gap), "y": round(y, 1), "w": width,
+                         "h": round(h, 1), "kind": kind, "n": n, "day": day})  # fmt: skip
+    return {
+        "bars": bars,
+        "width": CHART_DAYS * (width + gap) - gap,
+        "height": height,
+        "total": sum(totals),
+        "top": top,
+        "first": days[0],
+        "last": days[-1],
+    }
 
 
 @router.post("/jobs/{job_id}/retry", dependencies=[Csrf])

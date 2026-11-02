@@ -249,3 +249,54 @@ class TestUi:
         secret = ensure_bootstrap_token(store)
         assert secret and store.verify(secret).scope == ScopeLevel.ADMIN  # type: ignore[union-attr]
         assert ensure_bootstrap_token(store) is None
+
+
+class TestDocumentsAndImport:
+    def test_rest_upload_and_import(self, client: TestClient, tokens: dict[str, str]) -> None:
+        from tests.fixtures import make_docx
+
+        w, r = tokens["write"], tokens["read"]
+        res = client.post(
+            "/api/v1/documents",
+            files={"file": ("notes.docx", make_docx(), "application/octet-stream")},
+            data={"why": "spec", "tags": "design, docs"},
+            headers=auth(w),
+        )
+        assert res.status_code == 202, res.text
+        data = wait_ready(client, res.json()["id"], r)
+        assert data["kind"] == "document" and data["tags"] == ["design", "docs"]
+        assert data["source_file"]["path"] == "source/notes.docx"
+        assert data["meta"]["format"] == "docx"
+        dl = client.get(f"/api/v1/resources/{data['id']}/files/source/notes.docx", headers=auth(r))
+        assert dl.content == make_docx()
+        hits = client.get(
+            "/api/v1/search", params={"q": "fts5", "kind": "document"}, headers=auth(r)
+        )
+        assert [h["id"] for h in hits.json()["results"]] == [data["id"]]
+        again = client.post("/api/v1/documents", files={"file": ("x.docx", make_docx())},
+                            headers=auth(w))  # fmt: skip
+        assert again.status_code == 200 and again.json()["duplicate"] is True
+        assert client.post("/api/v1/documents", files={"file": ("y.txt", b"hi")},
+                           headers=auth(r)).status_code == 403  # fmt: skip
+
+        report = client.post(
+            "/api/v1/import",
+            json={"text": f"{URL}\nhttp://192.168.0.1/", "tags": ["batch"]},
+            headers=auth(w),
+        ).json()
+        assert len(report["created"]) == 1 and len(report["errors"]) == 1
+
+    def test_ui_upload(self, client: TestClient, tokens: dict[str, str]) -> None:
+        csrf = TestUi().login(client, tokens["write"])
+        res = client.post(
+            "/upload",
+            data={"csrf": csrf, "why": "", "tags": ""},
+            files=[("files", ("a.md", b"# Alpha\n\nfirst")), ("files", ("b.txt", b"beta"))],
+            follow_redirects=False,
+        )
+        assert res.status_code == 303 and res.headers["location"].startswith("/activity")
+        assert client.get("/add?tab=file").status_code == 200
+        assert client.get("/add?tab=import").status_code == 200
+        res = client.post("/import", data={"csrf": csrf, "text": URL}, follow_redirects=False)
+        assert res.status_code == 303
+        assert "1 link(s) saved" in client.get(res.headers["location"]).text

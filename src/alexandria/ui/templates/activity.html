@@ -1,12 +1,33 @@
 {% extends "base.html" %}
+{% from "_macros.html" import kind_icon %}
 {% block title %}Activity{% endblock %}
 {% block content %}
 <div class="page-head">
-  <div><h1>Activity</h1><p>Fetches, downloads and re-indexing, as they happen.</p></div>
-  <nav class="seg" aria-label="Filter jobs">
-    <a href="/activity" class="{{ 'on' if not status }}">All</a>
-    {% for s in ["queued", "running", "failed", "done"] %}<a href="/activity?status={{ s }}" class="{{ 'on' if status == s }}">{{ s | capitalize }} <span class="muted">{{ counts[s] }}</span></a>{% endfor %}
-  </nav>
+  <div><h1>Activity</h1><p>What came into the library, and the fetches, extractions and downloads behind it.</p></div>
+  <a class="btn" href="/add">Add</a>
 </div>
+
+<div class="two-col">
+  <section class="card pad">
+    <div class="row"><p class="section-title grow">Captured, last 30 days</p><span class="small muted">{{ chart.total }} resource{{ "s" if chart.total != 1 }}</span></div>
+    <svg class="chart" viewBox="0 0 {{ chart.width }} {{ chart.height + 2 }}" role="img" aria-label="Resources captured per day over the last 30 days">
+      {% for i in range(30) %}<rect class="track" x="{{ i * 22 }}" y="0" width="18" height="{{ chart.height }}" rx="3"></rect>{% endfor %}
+      {% for b in chart.bars %}<rect class="{{ b.kind }}" x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" rx="2"><title>{{ b.day }}: {{ b.n }} {{ {"article": "article", "git_repo": "repository", "note": "note", "document": "document"}[b.kind] }}{{ "s" if b.n > 1 }}</title></rect>{% endfor %}
+    </svg>
+    <div class="row small muted"><span class="grow">{{ chart.first }}</span><span>today</span></div>
+    <div class="legend"><span><i class="article"></i>Articles</span><span><i class="git_repo"></i>Repositories</span><span><i class="document"></i>Documents</span><span><i class="note"></i>Notes</span><span class="muted">peak {{ chart.top }}/day</span></div>
+  </section>
+  <section class="card pad">
+    <p class="section-title">Latest captures</p>
+    {% if recent %}<ul class="feed">{% for hit, row in recent %}<li>{{ kind_icon(row.kind, 14) }}<a href="/r/{{ row.slug }}" title="{{ row.title }}">{{ row.title }}</a><span class="muted small nowrap">{{ row.captured_at | ago }}</span></li>{% endfor %}</ul>
+    {% else %}<p class="muted">Nothing yet.</p>{% endif %}
+  </section>
+</div>
+
+<nav class="counters" aria-label="Filter jobs">
+  {% for s, label in [("queued", "Queued"), ("running", "Running"), ("failed", "Failed"), ("done", "Done")] %}
+  <a class="card {{ s }} {{ 'on' if status == s }}" href="{{ '/activity' if status == s else '/activity?status=' ~ s }}"><b>{{ counts[s] }}</b><span>{{ label }}</span></a>
+  {% endfor %}
+</nav>
 <div id="jobs" hx-get="/activity{% if status %}?status={{ status }}{% endif %}" hx-trigger="every 3s" hx-swap="innerHTML">{% include "_jobs.html" %}</div>
 {% endblock %}

@@ -17,3 +17,5 @@ mark the old one superseded.
 | [0009](0009-note-body-is-content.md) | A note's body is its content, indexed once | Accepted |
 | [0010](0010-ui-security-model.md) | UI: cookie holding the token, CSRF, strict CSP, no remote images | Accepted |
 | [0011](0011-failed-refetch-keeps-resource-ready.md) | A failed re-fetch keeps the resource usable | Accepted |
+| [0012](0012-documents-and-text-extraction.md) | Documents: original in `source/`, text extracted into snapshots | Accepted |
+| [0013](0013-bulk-link-import.md) | Bulk import of links from text or a bookmarks export | Accepted |
