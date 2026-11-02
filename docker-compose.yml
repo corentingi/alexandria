@@ -1,0 +1,10 @@
+services:
+  alexandria:
+    image: alexandria:latest
+    build: .
+    ports: ["8080:8080"]
+    # Must be local storage on the host (no NFS/SMB): SQLite WAL needs working locks.
+    volumes: ["${ALEXANDRIA_VOLUME:-./data}:/data"]
+    environment:
+      ALEXANDRIA_GITHUB__TOKEN: ${GITHUB_TOKEN:-}
+    restart: unless-stopped

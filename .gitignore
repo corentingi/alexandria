@@ -8,3 +8,5 @@ __pycache__/
 /dev-data/
 dist/
 .python-version
+# Personal agent instructions (Claude Code reads this; it imports AGENTS.md)
+CLAUDE.local.md
