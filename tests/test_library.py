@@ -409,3 +409,67 @@ class TestGit:
             await worker.drain()
         res = library.get(result.resource.id)
         assert res.fetch_status == FetchStatus.FAILED and "not found" in (res.fetch_error or "")
+
+
+class TestReviewRegressions:
+    async def test_git_never_follows_redirects(
+        self, library: Library, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from alexandria.fetchers import git_repo
+
+        seen: dict[str, str] = {}
+
+        async def fake_exec(*args: str, env: dict[str, str], **kwargs: object) -> object:
+            seen.update(env)
+            raise RuntimeError("stop")
+
+        monkeypatch.setattr(git_repo.asyncio, "create_subprocess_exec", fake_exec)
+        fetcher = library.fetchers[Kind.GIT_REPO]
+        with pytest.raises(RuntimeError):
+            await fetcher._git(["clone", "x", "y"])  # type: ignore[attr-defined]
+        assert seen["GIT_CONFIG_KEY_0"] == "http.followRedirects"
+        assert seen["GIT_CONFIG_VALUE_0"] == "false"
+        assert seen["GIT_ALLOW_PROTOCOL"] == "https:file"
+
+    async def test_oversized_repo_keeps_metadata(
+        self, library: Library, worker: Worker, source_repo: Path, tmp_path: Path
+    ) -> None:
+        library.settings.git.max_archive_mb = 0
+        note = await library.create_note("placeholder", "x")
+        res = library.get(note.id).model_copy(
+            update={"kind": Kind.GIT_REPO, "source_url": f"file://{source_repo}"}
+        )
+        staging = tmp_path / "stage"
+        staging.mkdir()
+        snap = await library.fetchers[Kind.GIT_REPO].fetch(res, staging)
+        assert snap.meta["archive_skipped"] == "too_large"
+        assert "repository" not in {a.role for a in snap.artifacts}
+
+    async def test_install_failure_does_not_leave_fetching(
+        self, library: Library, worker: Worker, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        real_apply = library._apply_snapshot
+
+        def boom(*args: object, **kwargs: object) -> None:
+            raise OSError("disk full")
+
+        monkeypatch.setattr(library, "_apply_snapshot", boom)
+        with respx.mock() as router:
+            mock_article(router)
+            result = await library.ingest(ARTICLE_URL, why="x")
+            await worker.drain()
+        res = library.get(result.resource.id)
+        assert res.fetch_status == FetchStatus.FAILED and "disk full" in (res.fetch_error or "")
+        snapshots = library.files.resource_dir(res.id) / "snapshots"
+        assert not snapshots.exists() or not any(snapshots.iterdir())  # no orphan snapshot
+        monkeypatch.setattr(library, "_apply_snapshot", real_apply)
+
+    async def test_note_whitespace_reindex_identical(self, library: Library) -> None:
+        note = await library.create_note("N", "   # Title\n\nbody about otters  \n")
+        before = library.index.chunks(note.id)
+        await library.reindex()
+        after = library.index.chunks(note.id)
+        assert [(c["heading_path"], c["text"]) for c in before] == [
+            (c["heading_path"], c["text"]) for c in after
+        ]
+        assert before[0]["heading_path"] == "Title"

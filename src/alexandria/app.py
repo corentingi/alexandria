@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from http.cookies import SimpleCookie
 from pathlib import Path
 from typing import Any
 
@@ -101,13 +103,83 @@ def create_app(
     static = Path(__file__).parent / "ui" / "static"
     api.mount("/static", StaticFiles(directory=static), name="static")
 
-    return Root(api, McpAuth(mcp_app, tokens))
+    max_body = (settings.attachments.max_mb + 25) * 1_000_000  # uploads plus form overhead
+    guarded = RequestGuard(api, tokens, settings.http.session_secret or "", max_body)
+    return Root(guarded, McpAuth(mcp_app, tokens))
+
+
+_WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+_PUBLIC_POSTS = {"/login"}
+
+
+class RequestTooLarge(Exception):
+    pass
+
+
+class RequestGuard:
+    """Authenticate writes and cap their size *before* any body is read.
+
+    FastAPI parses form bodies (uploads) before it runs auth dependencies, so without this
+    an anonymous client could make the server spool arbitrary uploads to disk. Routes still
+    check scopes and CSRF themselves; this only rejects requests with no valid credential.
+    """
+
+    def __init__(self, app: ASGIApp, tokens: TokenStore, secret: str, max_body: int) -> None:
+        self.app = app
+        self.tokens = tokens
+        self.secret = secret
+        self.max_body = max_body
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or scope["method"] not in _WRITE_METHODS:
+            await self.app(scope, receive, send)
+            return
+        headers = {k.decode().lower(): v.decode(errors="replace") for k, v in scope["headers"]}
+        path: str = scope["path"]
+        length = headers.get("content-length", "")
+        if length.isdigit() and int(length) > self.max_body:
+            await _plain(send, 413, "request body too large")
+            return
+        if path not in _PUBLIC_POSTS and not self._authenticated(path, headers):
+            await _plain(send, 401, "authentication required")
+            return
+
+        received = 0
+
+        async def capped_receive() -> Any:
+            nonlocal received
+            message = await receive()
+            if message["type"] == "http.request":
+                received += len(message.get("body", b""))
+                if received > self.max_body:
+                    raise RequestTooLarge  # chunked bodies without a Content-Length
+            return message
+
+        await self.app(scope, capped_receive, send)
+
+    def _authenticated(self, path: str, headers: dict[str, str]) -> bool:
+        from alexandria.auth import bearer
+        from alexandria.ui.routes import COOKIE, session_principal
+
+        if path.startswith("/api/"):
+            return self.tokens.verify(bearer(headers.get("authorization"))) is not None
+        cookies = SimpleCookie()
+        cookies.load(headers.get("cookie", ""))
+        cookie = cookies[COOKIE].value if COOKIE in cookies else None
+        return session_principal(cookie, self.secret, self.tokens) is not None
+
+
+async def _plain(send: Send, status: int, message: str) -> None:
+    body = json.dumps({"detail": message}).encode()
+    await send({"type": "http.response.start", "status": status,
+                "headers": [(b"content-type", b"application/json")]})  # fmt: skip
+    await send({"type": "http.response.body", "body": body})
 
 
 class Root:
     """Send ``/mcp`` to the MCP transport and everything else (lifespan included) to FastAPI."""
 
-    def __init__(self, api: FastAPI, mcp: ASGIApp) -> None:
+    def __init__(self, api: ASGIApp, mcp: ASGIApp) -> None:
         self.api = api
         self.mcp = mcp
 

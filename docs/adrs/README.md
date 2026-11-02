@@ -19,3 +19,4 @@ mark the old one superseded.
 | [0011](0011-failed-refetch-keeps-resource-ready.md) | A failed re-fetch keeps the resource usable | Accepted |
 | [0012](0012-documents-and-text-extraction.md) | Documents: original in `source/`, text extracted into snapshots | Accepted |
 | [0013](0013-bulk-link-import.md) | Bulk import of links from text or a bookmarks export | Accepted |
+| [0014](0014-hardening-after-review.md) | Hardening after the first review | Accepted |

@@ -25,7 +25,7 @@ from markupsafe import Markup, escape
 from starlette.datastructures import UploadFile as StarletteUpload
 
 from alexandria import __version__
-from alexandria.auth import Principal, ScopeLevel
+from alexandria.auth import Principal, ScopeLevel, TokenStore
 from alexandria.context import AppContext
 from alexandria.library import InvalidInput, NotFound, Update
 from alexandria.models import Kind, Resource, Status, iso
@@ -77,15 +77,22 @@ def _csrf_for(request: Request, cookie: str) -> str:
     return hmac.new(secret, cookie.encode(), hashlib.sha256).hexdigest()[:32]
 
 
-def current_user(request: Request) -> Principal | None:
-    cookie = request.cookies.get(COOKIE)
+def session_principal(cookie: str | None, secret: str, tokens: TokenStore) -> Principal | None:
+    """The principal behind a session cookie (its token is re-verified every time)."""
     if not cookie:
         return None
     try:
-        data = _serializer(request).loads(cookie)
+        data = URLSafeSerializer(secret, salt="session").loads(cookie)
     except BadSignature:
         return None
-    return ctx(request).tokens.verify(data.get("t") if isinstance(data, dict) else None)
+    return tokens.verify(data.get("t") if isinstance(data, dict) else None)
+
+
+def current_user(request: Request) -> Principal | None:
+    c = ctx(request)
+    return session_principal(
+        request.cookies.get(COOKIE), c.settings.http.session_secret or "", c.tokens
+    )
 
 
 def _login_redirect(request: Request) -> HTTPException:

@@ -300,3 +300,26 @@ class TestDocumentsAndImport:
         res = client.post("/import", data={"csrf": csrf, "text": URL}, follow_redirects=False)
         assert res.status_code == 303
         assert "1 link(s) saved" in client.get(res.headers["location"]).text
+
+
+class TestReviewRegressions:
+    def test_anonymous_writes_rejected_before_body(self, client: TestClient) -> None:
+        files = {"file": ("big.txt", b"x" * 100_000)}
+        assert client.post("/api/v1/documents", files=files).status_code == 401
+        assert client.post("/upload", files={"files": ("a.txt", b"x")}).status_code == 401
+        assert client.post("/login", data={"token": "nope"}).status_code == 401  # still public
+
+    def test_oversized_body(
+        self, client: TestClient, settings: Settings, tokens: dict[str, str]
+    ) -> None:
+        too_big = str((settings.attachments.max_mb + 26) * 1_000_000)
+        headers = auth(tokens["write"]) | {"content-length": too_big}
+        res = client.post("/api/v1/documents", headers=headers, content=b"")
+        assert res.status_code == 413
+
+    def test_mcp_labels_extracted_meta(self, client: TestClient, tokens: dict[str, str]) -> None:
+        made = tool(client, tokens["write"], "ingest_url", url=URL, why="x")
+        rid = made["structuredContent"]["id"]
+        wait_ready(client, rid, tokens["read"])
+        detail = tool(client, tokens["read"], "get_resource", ref=rid)["structuredContent"]
+        assert "meta" not in detail and detail["untrusted_meta"]["language"] == "en"

@@ -47,7 +47,9 @@ class CloneResult:
 
 
 class GitError(FetchError):
-    pass
+    def __init__(self, message: str, permanent: bool = False, too_large: bool = False) -> None:
+        super().__init__(message, permanent=permanent or too_large)
+        self.too_large = too_large
 
 
 class GitRepoFetcher:
@@ -87,39 +89,47 @@ class GitRepoFetcher:
         await self._guard(clone_url)
         work = staging_dir / "work"
         work.mkdir()
-        clone = await self._clone(clone_url, work, size_kb)
+        repo_meta: dict[str, Any] = {}
+        size_mb = 0.0
+        clone: CloneResult | None = None
+        try:
+            clone = await self._clone(clone_url, work, size_kb)
+        except GitError as exc:
+            if not exc.too_large:
+                raise
+            meta["archive_skipped"] = "too_large"  # keep metadata and README (design §8.3)
 
-        repo_meta = await self._inspect(clone.path)
-        if not meta.get("default_branch"):
-            meta["default_branch"] = repo_meta.get("default_branch")
-        if repo_meta.get("lfs"):
-            meta["lfs"] = True
-        if not readme_found and repo_meta.get("readme_name"):
-            readme = staging_dir / "README.md"
-            text = await self._git_show(clone.path, repo_meta["readme_name"])
-            if text is not None:
-                readme.write_text(text, encoding="utf-8")
-                artifacts.append(describe_file(readme, "readme"))
-                readme_found = True
-
-        size_mb = _dir_size(clone.path) / 1_000_000
-        if size_mb > self.settings.git.max_archive_mb:
-            meta["archive_skipped"] = "too_large"
-        else:
-            archive = staging_dir / ARCHIVE_NAME
-            await asyncio.to_thread(_make_tarball, clone.path, archive)
-            artifacts.insert(
-                0,
-                describe_file(
-                    archive,
-                    "repository",
-                    history=clone.history,
-                    depth=clone.depth,
-                    head_commit=repo_meta.get("head_commit"),
-                    commit_count=repo_meta.get("commit_count"),
-                    default_branch=repo_meta.get("default_branch"),
-                ),
-            )
+        if clone is not None:
+            repo_meta = await self._inspect(clone.path)
+            if not meta.get("default_branch"):
+                meta["default_branch"] = repo_meta.get("default_branch")
+            if repo_meta.get("lfs"):
+                meta["lfs"] = True
+            if not readme_found and repo_meta.get("readme_name"):
+                readme = staging_dir / "README.md"
+                text = await self._git_show(clone.path, repo_meta["readme_name"])
+                if text is not None:
+                    readme.write_text(text, encoding="utf-8")
+                    artifacts.append(describe_file(readme, "readme"))
+                    readme_found = True
+            size_mb = _dir_size(clone.path) / 1_000_000
+            if size_mb > self.settings.git.max_archive_mb:
+                meta["archive_skipped"] = "too_large"
+            else:
+                archive = staging_dir / ARCHIVE_NAME
+                await asyncio.to_thread(_make_tarball, clone.path, archive)
+                artifacts.insert(
+                    0,
+                    describe_file(
+                        archive,
+                        "repository",
+                        history=clone.history,
+                        depth=clone.depth,
+                        head_commit=repo_meta.get("head_commit"),
+                        commit_count=repo_meta.get("commit_count"),
+                        default_branch=repo_meta.get("default_branch"),
+                    ),
+                )
         shutil.rmtree(work)
 
         fetch_json = staging_dir / "fetch.json"
@@ -127,8 +137,8 @@ class GitRepoFetcher:
             json.dumps(
                 {
                     "clone_url": clone_url,
-                    "history": clone.history,
-                    "depth": clone.depth,
+                    "history": clone.history if clone else None,
+                    "depth": clone.depth if clone else None,
                     "bare_size_mb": round(size_mb, 2),
                     **{k: v for k, v in repo_meta.items() if k != "readme_name"},
                 },
@@ -204,10 +214,14 @@ class GitRepoFetcher:
         too_big = size_kb is not None and size_kb / 1024 > cfg.full_history_max_mb
         if not too_big:
             try:
-                await self._git(["clone", "--bare", url, str(target)], timeout=cfg.clone_timeout_s)
+                await self._git(
+                    ["clone", "--bare", url, str(target)],
+                    timeout=cfg.clone_timeout_s,
+                    watch=target,
+                )
                 return CloneResult(target, "full", None)
             except GitError as exc:
-                if exc.permanent:
+                if exc.permanent or exc.too_large:
                     raise
                 log.warning("full clone of %s failed (%s); falling back to shallow", url, exc)
                 shutil.rmtree(target, ignore_errors=True)
@@ -222,6 +236,7 @@ class GitRepoFetcher:
                 str(target),
             ],
             timeout=cfg.clone_timeout_s,
+            watch=target,
         )
         return CloneResult(target, "shallow", cfg.shallow_depth)
 
@@ -258,7 +273,9 @@ class GitRepoFetcher:
         cwd: Path | None = None,
         timeout: float = 120,
         check: bool = True,
+        watch: Path | None = None,
     ) -> str | None:
+        """Run git. With ``watch``, kill it once that directory outgrows max_archive_mb."""
         env = {
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
             "HOME": str(cwd or Path.cwd()),
@@ -267,14 +284,18 @@ class GitRepoFetcher:
             "GIT_CONFIG_NOSYSTEM": "1",
             "GIT_CONFIG_GLOBAL": os.devnull,
             "GIT_LFS_SKIP_SMUDGE": "1",
+            # A redirect would send git to a host the SSRF guard never saw.
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "http.followRedirects",
+            "GIT_CONFIG_VALUE_0": "false",
         }
         token = self.settings.github.token
         if token and args[:1] == ["clone"] and any("github.com" in a for a in args):
             basic = base64.b64encode(f"x-access-token:{token}".encode()).decode()
             env |= {
-                "GIT_CONFIG_COUNT": "1",
-                "GIT_CONFIG_KEY_0": "http.https://github.com/.extraheader",
-                "GIT_CONFIG_VALUE_0": f"Authorization: Basic {basic}",
+                "GIT_CONFIG_COUNT": "2",
+                "GIT_CONFIG_KEY_1": "http.https://github.com/.extraheader",
+                "GIT_CONFIG_VALUE_1": f"Authorization: Basic {basic}",
             }
         proc = await asyncio.create_subprocess_exec(
             "git",
@@ -285,12 +306,34 @@ class GitRepoFetcher:
             stderr=asyncio.subprocess.PIPE,
             stdin=asyncio.subprocess.DEVNULL,
         )
+        limit = self.settings.git.max_archive_mb * 1_000_000
+        exceeded = False
+
+        async def watchdog() -> None:
+            nonlocal exceeded
+            while watch is not None:
+                await asyncio.sleep(1)
+                size = await asyncio.to_thread(_dir_size, watch) if watch.exists() else 0
+                if size > limit:
+                    exceeded = True
+                    proc.kill()
+                    return
+
+        guard = asyncio.create_task(watchdog())
         try:
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
         except TimeoutError as exc:
-            proc.kill()
-            await proc.wait()
             raise GitError(f"git {args[0]} timed out after {timeout:.0f}s") from exc
+        finally:
+            guard.cancel()
+            if proc.returncode is None:  # timeout, cancellation (shutdown), any error
+                proc.kill()
+                await proc.wait()
+        if exceeded:
+            raise GitError(
+                f"git {args[0]} stopped: repository exceeds {self.settings.git.max_archive_mb} MB",
+                too_large=True,
+            )
         if proc.returncode != 0:
             if not check:
                 return None

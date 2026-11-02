@@ -104,7 +104,8 @@ def resource_detail(
             "captured_at": iso(resource.captured_at),
             "updated_at": iso(resource.updated_at),
             "created_by": resource.created_by,
-            "meta": resource.meta,
+            # For agents (full=False), source-derived metadata is labelled untrusted.
+            ("meta" if full else "untrusted_meta"): resource.meta,
             "current_snapshot": resource.current_snapshot,
             "snapshots": snapshots,
             "attachments": [

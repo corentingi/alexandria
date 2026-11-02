@@ -23,6 +23,7 @@ MAX_CHAPTERS = 2000
 MAX_ZIP_MEMBER = 50_000_000  # uncompressed bytes per member
 MAX_ZIP_TOTAL = 300_000_000  # uncompressed bytes per document
 MAX_MARKDOWN_CHARS = 10_000_000
+MAX_HTML_BYTES = 20_000_000  # same cap as a fetched page
 
 FORMATS = ("pdf", "docx", "epub", "html", "markdown", "text")
 EXTENSIONS = {
@@ -299,7 +300,7 @@ class _ZipBudget:
 def _html(path: Path, url: str | None) -> Extraction:
     import trafilatura
 
-    raw = path.read_bytes()
+    raw = _head(path, MAX_HTML_BYTES)
     markdown = trafilatura.extract(
         raw, url=url, output_format="markdown", include_links=True, include_tables=True,
         include_comments=False, include_formatting=True,
@@ -376,7 +377,7 @@ def html_to_markdown(raw: bytes | str) -> str:
 
 
 def _text(path: Path, url: str | None) -> Extraction:
-    raw = path.read_bytes()[: MAX_MARKDOWN_CHARS * 2]
+    raw = _head(path, MAX_MARKDOWN_CHARS * 2)
     text = _decode(raw)
     first = next((line.strip("# ").strip() for line in text.splitlines() if line.strip()), "")
     return Extraction("text", text, first[:200] or None)
@@ -405,6 +406,12 @@ _EXTRACTORS = {
     "pdf": _pdf, "docx": _docx, "epub": _epub, "html": _html, "markdown": _markdown,
     "text": _text,
 }  # fmt: skip
+
+
+def _head(path: Path, limit: int) -> bytes:
+    """At most ``limit`` bytes: a huge upload must not be read whole into memory."""
+    with path.open("rb") as fh:
+        return fh.read(limit)
 
 
 def _text_of(el: Any) -> str | None:

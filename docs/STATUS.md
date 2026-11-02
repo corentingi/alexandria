@@ -30,6 +30,7 @@
 - DNS-rebinding TOCTOU between the SSRF check and the connection (ADR-0007).
 - Trafilatura sometimes turns lines starting with `#` inside unfenced code into headings.
 - Git clone timeout falls back to shallow on *any* non-"not found" failure, not only size.
+- A review on 2026-11-02 found 8 issues, all fixed (ADR-0014), each with a regression test.
 - No incremental `git fetch` on re-fetch: each snapshot is a full new clone.
 - `stars`, `topics`… are refreshed only on re-fetch.
 - No OCR: scanned PDFs are kept and flagged `extraction: poor`. No text from attachments

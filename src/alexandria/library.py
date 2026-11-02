@@ -21,7 +21,7 @@ from alexandria.chunking import Chunk, chunk_markdown
 from alexandria.config import Settings
 from alexandria.fetchers.article import ArticleFetcher
 from alexandria.fetchers.attachment import download_attachment
-from alexandria.fetchers.base import Fetcher, FetchError, PermanentFetchError
+from alexandria.fetchers.base import Fetcher, FetchError, PermanentFetchError, SnapshotResult
 from alexandria.fetchers.document import DocumentFetcher
 from alexandria.fetchers.git_repo import GitRepoFetcher
 from alexandria.ids import new_id, unique_slug
@@ -402,7 +402,7 @@ class Library:
             )
             resource.status = Status.KEPT if resource.why else Status.INBOX
             self.files.write(resource)
-            self.index.upsert(resource, chunk_markdown(body), "note")
+            self.index.upsert(resource, chunk_markdown(resource.notes), "note")
         return resource
 
     async def update(self, ref: str, changes: Update) -> Resource:
@@ -589,46 +589,79 @@ class Library:
             shutil.rmtree(staging, ignore_errors=True)
             await self._record_fetch_failure(resource_id, job, exc)
             raise
-        async with self.lock(resource_id):
-            if not self.files.exists(resource_id):
-                shutil.rmtree(staging, ignore_errors=True)
-                raise PermanentFetchError("resource was deleted during fetch")
-            resource = self.files.read(resource_id)  # fresh: a human may have edited it
-            first_snapshot = not resource.snapshots
-            snapshot_id = self.files.new_snapshot_id(resource_id)
-            self.files.install_snapshot(staging, resource_id, snapshot_id)
-            resource.snapshots.append(Snapshot(id=snapshot_id, artifacts=result.artifacts))
-            resource.current_snapshot = snapshot_id
-            meta = {k: v for k, v in resource.meta.items() if k not in _SNAPSHOT_META_KEYS}
-            meta.update({k: v for k, v in result.meta.items() if v is not None})
-            if result.text_role == "content":
-                content = resource.artifact("content")
-                duplicate = (
-                    self.index.duplicate_content(resource_id, content.sha256) if content else None
-                )
-                if duplicate:
-                    meta["possible_duplicate_of"] = duplicate
-            resource.meta = meta
-            if (
-                result.title
-                and resource.title_source != TitleSource.HUMAN
-                and _useful_title(result.title)
-            ):
-                resource.title = result.title.strip()[:300]
-                resource.title_source = TitleSource.EXTRACTED
-                if first_snapshot and resource.kind in (Kind.ARTICLE, Kind.DOCUMENT):
-                    # The slug was derived from the URL; now we know the real title.
-                    resource.slug = unique_slug(
-                        resource.title, lambda s: self.index.slug_taken(s, resource_id)
-                    )
-            resource.fetch_status = FetchStatus.READY
-            resource.fetch_error = None
-            resource.updated_at = utcnow()
+        try:
+            async with self.lock(resource_id):
+                await self._install_snapshot(resource_id, staging, result)
+        except BaseException as exc:
+            shutil.rmtree(staging, ignore_errors=True)
+            await self._record_fetch_failure(resource_id, job, exc)
+            raise
+
+    async def _install_snapshot(
+        self, resource_id: str, staging: Path, result: SnapshotResult
+    ) -> None:
+        """Move the staged snapshot in and update the resource. Caller holds the lock.
+
+        If anything fails after the move but before resource.md references the snapshot,
+        the folder is removed again, so no orphan snapshot is left behind.
+        """
+        if not self.files.exists(resource_id):
+            shutil.rmtree(staging, ignore_errors=True)
+            raise PermanentFetchError("resource was deleted during fetch")
+        resource = self.files.read(resource_id)  # fresh: a human may have edited it
+        first_snapshot = not resource.snapshots
+        snapshot_id = self.files.new_snapshot_id(resource_id)
+        installed = self.files.install_snapshot(staging, resource_id, snapshot_id)
+        try:
+            self._apply_snapshot(resource, snapshot_id, result, first_snapshot)
             self.files.write(resource)
-            chunks, role = self._chunks_for(resource)
-            self.index.upsert(resource, chunks, role or "")
+        except BaseException:
+            shutil.rmtree(installed, ignore_errors=True)
+            raise
+        chunks, role = self._chunks_for(resource)
+        self.index.upsert(resource, chunks, role or "")
+
+    def _apply_snapshot(
+        self, resource: Resource, snapshot_id: str, result: SnapshotResult, first_snapshot: bool
+    ) -> None:
+        resource_id = resource.id
+        resource.snapshots.append(Snapshot(id=snapshot_id, artifacts=result.artifacts))
+        resource.current_snapshot = snapshot_id
+        meta = {k: v for k, v in resource.meta.items() if k not in _SNAPSHOT_META_KEYS}
+        meta.update({k: v for k, v in result.meta.items() if v is not None})
+        if result.text_role == "content":
+            content = resource.artifact("content")
+            duplicate = (
+                self.index.duplicate_content(resource_id, content.sha256) if content else None
+            )
+            if duplicate:
+                meta["possible_duplicate_of"] = duplicate
+        resource.meta = meta
+        if (
+            result.title
+            and resource.title_source != TitleSource.HUMAN
+            and _useful_title(result.title)
+        ):
+            resource.title = result.title.strip()[:300]
+            resource.title_source = TitleSource.EXTRACTED
+            if first_snapshot and resource.kind in (Kind.ARTICLE, Kind.DOCUMENT):
+                # The slug was derived from the URL; now we know the real title.
+                resource.slug = unique_slug(
+                    resource.title, lambda s: self.index.slug_taken(s, resource_id)
+                )
+        resource.fetch_status = FetchStatus.READY
+        resource.fetch_error = None
+        resource.updated_at = utcnow()
 
     async def _record_fetch_failure(self, resource_id: str, job: Job, exc: BaseException) -> None:
+        try:
+            await self._record_fetch_failure_unsafe(resource_id, job, exc)
+        except Exception:  # e.g. resource.md made invalid by a hand edit
+            log.exception("could not record the fetch failure of %s", resource_id)
+
+    async def _record_fetch_failure_unsafe(
+        self, resource_id: str, job: Job, exc: BaseException
+    ) -> None:
         if not self.files.exists(resource_id):
             return
         final = self.is_final_attempt(job, exc)

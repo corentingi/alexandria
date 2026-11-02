@@ -117,6 +117,13 @@ class Resource(BaseModel):
     def _normalize_tags(cls, value: list[str]) -> list[str]:
         return normalize_tags(value)
 
+    @field_validator("notes")
+    @classmethod
+    def _strip_notes(cls, value: str) -> str:
+        # resource.md bodies come back stripped; strip on the way in too, so live chunks
+        # and reindexed chunks are identical (acceptance criterion 6).
+        return value.strip()
+
     @field_validator("why", "project")
     @classmethod
     def _blank_is_none(cls, value: str | None) -> str | None:
