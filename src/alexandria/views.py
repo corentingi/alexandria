@@ -20,7 +20,11 @@ _NOISE = re.compile(r"(^|\n)\s*#{1,6}\s+|[`*_]{1,3}(?=\S)|(?<=\S)[`*_]{1,3}")
 
 def plain_snippet(snippet: str) -> str:
     """Readable snippet text: link labels without URLs, no heading or emphasis marks."""
-    text = _LINK.sub(r"\1", snippet)
+    # The chunk's own heading is reported separately (heading_path): drop it here.
+    text = (
+        re.sub(r"^\s*#{1,6}[^\n]*\n", "", snippet) if snippet.lstrip().startswith("#") else snippet
+    )
+    text = _LINK.sub(r"\1", text)
     text = _NOISE.sub(lambda m: " " if m.group(1) is not None else "", text)
     return " ".join(text.split())
 
