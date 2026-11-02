@@ -189,7 +189,13 @@ def _str_representer(dumper: yaml.SafeDumper, data: str) -> yaml.ScalarNode:
     return dumper.represent_scalar("tag:yaml.org,2002:str", data, style=style)
 
 
+def _list_representer(dumper: yaml.SafeDumper, data: list[Any]) -> yaml.SequenceNode:
+    flow = all(isinstance(v, (str, int, float, bool)) or v is None for v in data)
+    return dumper.represent_sequence("tag:yaml.org,2002:seq", data, flow_style=flow)
+
+
 _Dumper.add_representer(str, _str_representer)
+_Dumper.add_representer(list, _list_representer)
 
 
 def render_resource(resource: Resource) -> str:
@@ -197,7 +203,7 @@ def render_resource(resource: Resource) -> str:
     ordered = {key: _plain(data.pop(key)) for key in _KEY_ORDER if key in data}
     ordered.update({k: _plain(v) for k, v in data.items()})
     header = yaml.dump(
-        ordered, Dumper=_Dumper, sort_keys=False, allow_unicode=True, default_flow_style=None
+        ordered, Dumper=_Dumper, sort_keys=False, allow_unicode=True, default_flow_style=False
     )
     body = resource.notes.rstrip("\n")
     return f"---\n{header}---\n{body}\n" if body else f"---\n{header}---\n"

@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, kind_icon, status_badge %}
+{% block title %}{{ r.title }}{% endblock %}
+{% block content %}
+<header class="r-head">
+  {{ kind_icon(r.kind.value, 24) }}
+  <div class="grow">
+    <h1>{{ r.title }}</h1>
+    <div class="row small muted">
+      {% if r.canonical_url %}<a href="{{ r.canonical_url }}" rel="noopener noreferrer nofollow" target="_blank">{{ r.canonical_url | host }}{{ icon("external", 13) }}</a>{% endif %}
+      <span title="{{ captured }}">saved {{ r.captured_at | ago }}{% if r.created_by %} by {{ r.created_by }}{% endif %}</span>
+      {{ status_badge(r.status.value) }}
+      {% include "_fetch_status.html" %}
+      {% if r.project %}<a class="badge accent" href="/?project={{ r.project | urlquote }}">{{ r.project }}</a>{% endif %}
+    </div>
+  </div>
+</header>
+
+{% if r.fetch_status.value == "failed" or (r.fetch_error and r.fetch_status.value != "fetching") %}
+<div class="notice bad"><b>Last fetch failed:</b> {{ r.fetch_error }}</div>
+{% endif %}
+{% if duplicate_of %}<div class="notice warn">The content looks identical to <a href="/r/{{ duplicate_of.slug }}">{{ duplicate_of.title }}</a>.</div>{% endif %}
+{% if r.meta.get("extraction") == "poor" %}<div class="notice warn">Little text could be extracted from this page (it may need JavaScript). The raw HTML is archived.</div>{% endif %}
+
+<div class="r-layout">
+  <div>
+    <section class="card why-box {{ 'missing' if not r.why }}">
+      <details class="edit" {% if not r.why %}open{% endif %}>
+        <summary>
+          {% if r.why %}<p>{{ r.why }}</p>{% else %}<b>Why keep this?</b>{% endif %}
+        </summary>
+        <form method="post" action="/r/{{ r.slug }}/edit">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <textarea name="why" rows="2" placeholder="One sentence: why is this worth keeping?" {% if not r.why %}autofocus{% endif %}>{{ r.why or "" }}</textarea>
+          <div class="row end"><button class="btn primary sm" type="submit">Save reason</button></div>
+        </form>
+      </details>
+    </section>
+
+    <section class="card pad">
+      <div class="row"><h2 class="grow">{% if r.kind.value == "note" %}Note{% elif content_role == "readme" %}README{% else %}Content{% endif %}</h2>
+        {% if r.snapshots|length > 1 and shown %}<span class="small muted">snapshot {{ shown.id | snapdate }}{% if shown.id != r.current_snapshot %} · <a href="/r/{{ r.slug }}">see current</a>{% endif %}</span>{% endif %}
+      </div>
+      {% if r.kind.value != "note" and content %}<div class="untrusted-label">{{ icon("shield", 14) }} Fetched from the source; shown as data. Links open in a new tab, images are not loaded.</div>{% endif %}
+      {% if r.kind.value == "note" %}
+        <details class="edit">
+          <summary class="btn sm">Edit note</summary>
+          <form method="post" action="/r/{{ r.slug }}/edit"><input type="hidden" name="csrf" value="{{ csrf }}">
+            <textarea name="notes" rows="14">{{ r.notes }}</textarea>
+            <div class="row end"><button class="btn primary sm" type="submit">Save</button></div>
+          </form>
+        </details>
+      {% endif %}
+      {% if content %}
+        <div class="prose">{{ content | markdown }}</div>
+      {% elif r.fetch_status.value in ("pending", "fetching") %}
+        <p class="muted"><span class="spinner"></span> Fetching… this page refreshes when it is done.</p>
+      {% elif r.artifact("original") %}
+        <p class="muted">This is a {{ r.meta.get("content_type") or "binary file" }}; text is not extracted in this version. <a href="/r/{{ r.slug }}/files/snapshots/{{ r.current_snapshot }}/{{ r.artifact('original').path }}">Download it</a>.</p>
+      {% else %}
+        <p class="muted">No text content.</p>
+      {% endif %}
+    </section>
+
+    {% if r.kind.value != "note" %}
+    <section class="card pad">
+      <h2>Your notes</h2>
+      {% if r.notes %}<div class="prose">{{ r.notes | markdown }}</div>{% endif %}
+      <details class="edit" {% if not r.notes %}open{% endif %}>
+        <summary class="btn sm {{ 'ghost' if not r.notes }}">{{ "Edit notes" if r.notes else "" }}</summary>
+        <form method="post" action="/r/{{ r.slug }}/edit"><input type="hidden" name="csrf" value="{{ csrf }}">
+          <textarea name="notes" rows="5" placeholder="Anything you want to remember about it (Markdown).">{{ r.notes }}</textarea>
+          <div class="row end"><button class="btn primary sm" type="submit">Save notes</button></div>
+        </form>
+      </details>
+    </section>
+    {% endif %}
+  </div>
+
+  <aside>
+    <section class="card pad">
+      <p class="section-title">Details</p>
+      <form method="post" action="/r/{{ r.slug }}/edit">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <label class="field"><span>Title</span><input type="text" name="title" value="{{ r.title }}"></label>
+        <label class="field"><span>Tags</span><input type="text" name="tags" value="{{ r.tags | join(' ') }}" placeholder="space separated"></label>
+        <label class="field"><span>Project</span><input type="text" name="project" value="{{ r.project or '' }}" placeholder="global"></label>
+        <button class="btn sm" type="submit">Save details</button>
+      </form>
+      <hr>
+      <div class="row">
+        {% for s in ["kept", "inbox", "archived"] if s != r.status.value %}
+          {% if s != "kept" or r.why %}
+          <form method="post" action="/r/{{ r.slug }}/status/{{ s }}"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn sm ghost" type="submit">{{ {"kept": "Keep", "inbox": "Back to inbox", "archived": "Archive"}[s] }}</button></form>
+          {% endif %}
+        {% endfor %}
+        {% if r.kind.value != "note" and user.can(ScopeLevel.WRITE) %}
+          <form method="post" action="/r/{{ r.slug }}/refetch"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn sm" type="submit">{{ icon("refresh", 14) }} Re-fetch</button></form>
+        {% endif %}
+      </div>
+    </section>
+
+    {% set m = r.meta %}
+    {% if m %}
+    <section class="card pad">
+      <p class="section-title">Metadata</p>
+      <dl class="kv">
+        {% for key, label in [("description", "About"), ("author", "Author"), ("published_at", "Published"), ("sitename", "Site"), ("language", "Language"), ("license", "License"), ("stars", "Stars"), ("default_branch", "Branch"), ("pushed_at", "Last push"), ("size_kb", "Size"), ("content_type", "Type"), ("archive_skipped", "Archive"), ("final_url", "Redirected to")] if m.get(key) is not none and m.get(key) != "" %}
+          <dt>{{ label }}</dt><dd>{% if key == "size_kb" %}{{ (m[key] * 1024) | filesize }}{% else %}{{ m[key] }}{% endif %}</dd>
+        {% endfor %}
+        {% if m.get("topics") %}<dt>Topics</dt><dd><div class="tags">{% for t in m.topics %}<span class="tag">{{ t }}</span>{% endfor %}</div></dd>{% endif %}
+        {% if m.get("lfs") %}<dt>LFS</dt><dd>uses Git LFS (objects not archived)</dd>{% endif %}
+        {% set repo = r.artifact("repository") %}
+        {% if repo %}{% set x = repo.model_extra %}
+          <dt>History</dt><dd>{{ x.history }}{% if x.depth %} (depth {{ x.depth }}){% endif %} · {{ x.commit_count }} commits</dd>
+          <dt>Head</dt><dd class="mono">{{ (x.head_commit or "")[:12] }}</dd>
+        {% endif %}
+      </dl>
+    </section>
+    {% endif %}
+
+    {% if chunks|length > 1 %}
+    <section class="card pad">
+      <p class="section-title">Sections · {{ chunks|length }} chunks</p>
+      <ul class="toc">{% for c in chunks %}<li title="{{ c.heading_path }}">{{ c.ord }}. {{ c.heading_path or "(intro)" }} <span class="muted">{{ c.chars }}c</span></li>{% endfor %}</ul>
+    </section>
+    {% endif %}
+
+    {% if r.snapshots %}
+    <section class="card pad">
+      <p class="section-title">Snapshots</p>
+      <ul class="timeline">
+      {% for s in r.snapshots | reverse %}
+        <li class="{{ 'current' if s.id == r.current_snapshot }}">
+          <a href="/r/{{ r.slug }}?snapshot={{ s.id }}"><b>{{ s.id | snapdate }}</b></a>{% if s.id == r.current_snapshot %} <span class="badge accent">current</span>{% endif %}
+          <ul class="files">
+            {% for a in s.artifacts %}<li><a href="/r/{{ r.slug }}/files/snapshots/{{ s.id }}/{{ a.path }}">{{ icon("download", 13) }} {{ a.path }}</a><span class="muted nowrap">{{ a.size | filesize }}</span></li>{% endfor %}
+          </ul>
+        </li>
+      {% endfor %}
+      </ul>
+      {% if r.artifact("repository") %}<p class="small muted">Restore: <code>tar -xzf repository.git.tar.gz &amp;&amp; git clone repository.git my-checkout</code></p>{% endif %}
+    </section>
+    {% endif %}
+
+    <section class="card pad">
+      <p class="section-title">Attachments</p>
+      {% if r.attachments %}
+      <ul class="files">{% for a in r.attachments %}<li><a href="/r/{{ r.slug }}/files/attachments/{{ a.path }}" title="{{ a.origin_url or '' }}">{{ icon("download", 13) }} {{ a.path }}</a><span class="muted nowrap">{{ a.size | filesize }}</span></li>{% endfor %}</ul>
+      {% endif %}
+      {% if user.can(ScopeLevel.WRITE) %}
+      <form method="post" action="/r/{{ r.slug }}/attachments" enctype="multipart/form-data">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <label class="field"><span class="sr-only">File</span><input type="file" name="file"></label>
+        <label class="field"><span class="sr-only">or URL</span><input type="url" name="url" placeholder="…or a URL to download"></label>
+        <button class="btn sm" type="submit">Attach</button>
+      </form>
+      {% endif %}
+    </section>
+
+    {% if jobs %}
+    <section class="card pad">
+      <p class="section-title">History</p>
+      <ul class="timeline">
+        {% for j in jobs %}<li><b>{{ j.type | replace("_", " ") }}</b> <span class="badge {{ {'done': 'ok', 'failed': 'bad', 'running': 'warn', 'queued': 'warn'}[j.status] }}">{{ j.status }}</span><br><span class="muted small">{{ j.updated_at | ago }}{% if j.attempts > 1 %} · {{ j.attempts }} attempts{% endif %}</span>{% if j.error and j.status != "done" %}<div class="small muted">{{ j.error }}</div>{% endif %}</li>{% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+
+    {% if user.can(ScopeLevel.ADMIN) %}
+    <section class="card pad">
+      <details class="edit"><summary class="btn sm danger">Delete…</summary>
+        <form method="post" action="/r/{{ r.slug }}/delete">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <p class="small">This deletes the folder, every snapshot and attachment. Type <code>{{ r.slug }}</code> to confirm.</p>
+          <input type="text" name="confirm" autocomplete="off" aria-label="Slug to confirm">
+          <div class="row end"><button class="btn sm danger" type="submit">Delete for good</button></div>
+        </form>
+      </details>
+    </section>
+    {% endif %}
+    <p class="small muted mono">{{ r.id }}</p>
+  </aside>
+</div>
+{% endblock %}

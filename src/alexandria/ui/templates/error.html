@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}{{ status_code }}{% endblock %}
+{% block content %}
+<div class="empty card">{{ icon("book", 40) }}<h1>{{ status_code }}</h1><p>{{ message }}</p><p><a class="btn" href="/">Back to the library</a></p></div>
+{% endblock %}

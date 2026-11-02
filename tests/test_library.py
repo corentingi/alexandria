@@ -67,14 +67,12 @@ class TestArticle:
         assert again.resource.id == rid
         assert again.resource.why == "testing"  # never overwritten
 
-    async def test_ssrf_rejected(self, library: Library, worker: Worker) -> None:
-        for url in ("http://192.168.1.1/", "http://localhost/"):
-            result = await library.ingest(url)
-            await worker.drain()
-            res = library.get(result.resource.id)
-            assert res.fetch_status == FetchStatus.FAILED
-            assert "SSRF" in (res.fetch_error or "")
-        assert all(j.status == "failed" and j.attempts == 1 for j in library.index.jobs())
+    async def test_ssrf_rejected(self, library: Library) -> None:
+        for url in ("http://192.168.1.1/", "http://localhost/", "http://intranet.example/x"):
+            with pytest.raises(InvalidInput, match="SSRF"):
+                await library.ingest(url)
+        assert library.search("") == []  # nothing was created
+        assert library.index.jobs() == []
 
     async def test_redirect_to_private_is_blocked(self, library: Library, worker: Worker) -> None:
         with respx.mock() as router:

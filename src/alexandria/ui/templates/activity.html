@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Activity{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Activity</h1><p>Fetches, downloads and re-indexing, as they happen.</p></div>
+  <nav class="seg" aria-label="Filter jobs">
+    <a href="/activity" class="{{ 'on' if not status }}">All</a>
+    {% for s in ["queued", "running", "failed", "done"] %}<a href="/activity?status={{ s }}" class="{{ 'on' if status == s }}">{{ s | capitalize }} <span class="muted">{{ counts[s] }}</span></a>{% endfor %}
+  </nav>
+</div>
+<div id="jobs" hx-get="/activity{% if status %}?status={{ status }}{% endif %}" hx-trigger="every 3s" hx-swap="innerHTML">{% include "_jobs.html" %}</div>
+{% endblock %}

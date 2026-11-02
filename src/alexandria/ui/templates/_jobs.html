@@ -1,0 +1,30 @@
+{% from "_macros.html" import kind_icon, icon %}
+{% if jobs %}
+<div class="card table-wrap">
+<table class="jobs">
+  <thead><tr><th>What</th><th>Resource</th><th>Status</th><th>When</th><th></th></tr></thead>
+  <tbody>
+  {% for j in jobs %}{% set row = rows.get(j.resource_id) %}
+    <tr>
+      <td class="nowrap"><b>{{ {"fetch": "Fetch", "attach_url": "Download attachment", "reindex_resource": "Re-index"}.get(j.type, j.type) }}</b>
+        {% if j.payload.get("url") %}<div class="small muted">{{ j.payload.url | host }}</div>{% endif %}</td>
+      <td>{% if row %}<div class="row">{{ kind_icon(row.kind, 14) }}<a class="grow" href="/r/{{ row.slug }}">{{ row.title }}</a></div>{% else %}<span class="muted">deleted</span>{% endif %}
+        {% if j.error %}<div class="err">{{ j.error }}</div>{% endif %}</td>
+      <td class="nowrap">
+        {% if j.status == "done" %}<span class="badge ok">done</span>
+        {% elif j.status == "failed" %}<span class="badge bad">failed</span>
+        {% elif j.status == "running" %}<span class="badge warn"><span class="dot pulse"></span>running</span>
+        {% else %}<span class="badge">queued</span>{% if j.attempts %}<div class="small muted">retry {{ j.attempts + 1 }} {{ j.run_after | ago | replace(" ago", "") }}</div>{% endif %}{% endif %}
+        {% if j.attempts > 1 and j.status != "queued" %}<div class="small muted">{{ j.attempts }} attempts</div>{% endif %}
+      </td>
+      <td class="nowrap small muted" title="{{ j.updated_at }}">{{ j.updated_at | ago }}</td>
+      <td>{% if j.status == "failed" and user.can(ScopeLevel.WRITE) %}
+        <form method="post" action="/jobs/{{ j.id }}/retry"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn sm" type="submit">{{ icon("refresh", 13) }} Retry</button></form>{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<div class="empty card"><p>No jobs{% if status %} with status “{{ status }}”{% endif %}.</p></div>
+{% endif %}

@@ -1,0 +1,42 @@
+{%- from "_macros.html" import icon -%}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="csrf-token" content="{{ csrf }}">
+<meta name="htmx-config" content='{"includeIndicatorStyles": false, "allowEval": false}'>
+<title>{% block title %}{% endblock %}{% if self.title() %} · {% endif %}Alexandria</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232c4c9c' stroke-width='2'%3E%3Cpath d='M3 21h18M5 21V10M9 21V10M15 21V10M19 21V10M2 10h20L12 3z'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/app.css?v={{ version }}">
+<script src="/static/htmx.min.js?v=2.0.4" defer></script>
+<script src="/static/app.js?v={{ version }}" defer></script>
+</head>
+<body>
+{% block body %}
+<div class="shell">
+  <aside class="side">
+    <a class="brand" href="/">{{ icon("logo", 26) }}<b>Alexandria</b></a>
+    <nav class="nav" aria-label="Main">
+      <a href="/" class="{{ 'on' if path == '/' }}">{{ icon("search") }}<span class="label">Search</span></a>
+      <a href="/inbox" class="{{ 'on' if path == '/inbox' }}">{{ icon("inbox") }}<span class="label">Inbox</span>{% if inbox_count %}<span class="count">{{ inbox_count }}</span>{% endif %}</a>
+      <a href="/add" class="{{ 'on' if path == '/add' }}">{{ icon("plus") }}<span class="label">Add</span></a>
+      <a href="/activity" class="{{ 'on' if path == '/activity' }}">{{ icon("activity") }}<span class="label">Activity</span>{% if active_jobs %}<span class="count live">{{ active_jobs }}</span>{% endif %}</a>
+      <a href="/tags" class="{{ 'on' if path == '/tags' }}">{{ icon("tag") }}<span class="label">Tags</span></a>
+      <a href="/settings" class="{{ 'on' if path == '/settings' }}">{{ icon("settings") }}<span class="label">Settings</span></a>
+    </nav>
+    {% if user %}<div class="foot">
+      Signed in as <b>{{ user.name }}</b> ({{ user.scope.label }})<br>
+      <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn ghost sm" type="submit">Sign out</button></form>
+      <span class="muted">v{{ version }}</span>
+    </div>{% endif %}
+  </aside>
+  <main class="main"><div class="wrap">
+    {%- if request.query_params.get("notice") %}<div class="notice ok" role="status">{{ request.query_params.get("notice") }}</div>{% endif %}
+    {%- if request.query_params.get("error") %}<div class="notice bad" role="alert">{{ request.query_params.get("error") }}</div>{% endif %}
+    {% block content %}{% endblock %}
+  </div></main>
+</div>
+{% endblock %}
+</body>
+</html>

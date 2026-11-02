@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Settings</h1><p>Capture from the browser, connect agents, manage the index.</p></div></div>
+
+<section class="card pad">
+  <h2>Bookmarklet</h2>
+  <p>Drag this button to your bookmarks bar. On any page, click it to save the page here with the cursor in the “why” field.</p>
+  <p><a class="bookmarklet" href="{{ bookmarklet }}" title="Drag me to the bookmarks bar">+ Alexandria</a></p>
+</section>
+
+<section class="card pad">
+  <h2>Connect an agent (MCP)</h2>
+  <p>Endpoint: <code>{{ base }}/mcp</code> (streamable HTTP), with <code>Authorization: Bearer &lt;token&gt;</code>. Give most agents a <b>read</b> token, and a <b>write</b> token to those that save things.</p>
+  <p class="small muted">Claude Code:</p>
+  <div class="codeblock"><pre id="mcp-cmd">claude mcp add --transport http alexandria {{ base }}/mcp --header "Authorization: Bearer $ALEXANDRIA_TOKEN"</pre><button class="btn sm" type="button" data-copy="#mcp-cmd">Copy</button></div>
+  <p class="small muted">JSON configuration:</p>
+  <div class="codeblock"><pre id="mcp-json">{"mcpServers": {"alexandria": {"type": "http", "url": "{{ base }}/mcp", "headers": {"Authorization": "Bearer ${ALEXANDRIA_TOKEN}"}}}}</pre><button class="btn sm" type="button" data-copy="#mcp-json">Copy</button></div>
+  <p class="small muted">REST API: <code>{{ base }}/api/v1</code> — <a href="/api/docs">interactive docs</a>.</p>
+</section>
+
+{% if user.can(ScopeLevel.ADMIN) %}
+<section class="card pad">
+  <h2>Tokens</h2>
+  <p class="small">Tokens are created and revoked from the command line, so a secret is never shown in a browser: <code>alexandria token create &lt;name&gt; --scope read|write|admin</code>, <code>alexandria token revoke &lt;name&gt;</code>.</p>
+  <div class="table-wrap"><table class="jobs">
+    <thead><tr><th>Name</th><th>Scope</th><th>Created</th></tr></thead>
+    <tbody>{% for t in tokens %}<tr><td><b>{{ t.name }}</b>{% if t.name == user.name %} <span class="badge accent">you</span>{% endif %}</td><td>{{ t.scope }}</td><td class="muted">{{ t.created_at | ago }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+</section>
+
+<section class="card pad">
+  <h2>Index</h2>
+  <p>The files under <code>resources/</code> are the source of truth. Rebuilding the index re-reads every <code>resource.md</code>; the job queue is kept.</p>
+  <form method="post" action="/reindex"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn" type="submit" data-confirm="Rebuild the whole search index from the files?">Rebuild index</button></form>
+</section>
+{% endif %}
+{% endblock %}

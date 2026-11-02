@@ -1,0 +1,2 @@
+{% from "_macros.html" import fetch_badge %}
+<span id="fetch-status" {% if r.fetch_status.value in ("pending", "fetching") %}hx-get="/r/{{ r.id }}/status" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>{{ fetch_badge(r.fetch_status.value, r.fetch_error) }}</span>

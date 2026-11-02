@@ -7,7 +7,6 @@ per-resource asyncio lock serializes edits to one resource (API PATCH vs. the wo
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import logging
 import shutil
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -38,7 +37,7 @@ from alexandria.models import (
     normalize_tags,
     utcnow,
 )
-from alexandria.security import safe_join, sanitize_filename, unique_name
+from alexandria.security import BlockedURL, check_url, safe_join, sanitize_filename, unique_name
 from alexandria.storage.files import FileStore, InvalidResourceFile, guess_mime, sha256_file
 from alexandria.storage.index import Index, Job, SearchFilters, SearchHit
 from alexandria.urls import InvalidURL, detect
@@ -216,6 +215,7 @@ class Library:
             detected = detect(url, kind)
         except InvalidURL as exc:
             raise InvalidInput(str(exc)) from exc
+        await self._guard(detected.canonical_url)
         async with self._ingest_lock:
             existing = self.index.find_by_canonical_url(detected.canonical_url)
             if existing is not None:
@@ -382,6 +382,7 @@ class Library:
             detect(url)  # validates scheme and host
         except InvalidURL as exc:
             raise InvalidInput(str(exc)) from exc
+        await self._guard(url)
         return self._enqueue("attach_url", resource_id, {"url": url, "added_by": added_by})
 
     async def reindex(self, ref: str | None = None) -> ReindexReport:
@@ -584,12 +585,16 @@ class Library:
 
     # ---------------------------------------------------------------- helpers
 
+    async def _guard(self, url: str) -> None:
+        """Reject private hosts up front. The fetcher checks again on every hop."""
+        try:
+            await check_url(url, self.settings.security.allow_private_hosts)
+        except BlockedURL as exc:
+            raise InvalidInput(f"blocked by SSRF guard: {exc}") from exc
+
     def _chunks_for(self, resource: Resource) -> tuple[list[Chunk], str | None]:
         text, role = self.text(resource)
         return (chunk_markdown(text) if text.strip() else []), role
-
-    def content_hash(self, text: str) -> str:
-        return hashlib.sha256(text.encode()).hexdigest()
 
     def startup(self) -> int:
         """Reset interrupted jobs and wipe staging. Returns how many jobs were reset."""

@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Add{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Add to the library</h1><p>A link is fetched and archived in the background. A note is saved as is.</p></div></div>
+<nav class="tabs">
+  <a href="/add" class="{{ 'on' if tab != 'note' }}">Link</a>
+  <a href="/add?tab=note" class="{{ 'on' if tab == 'note' }}">Note</a>
+</nav>
+{% if error %}<div class="notice bad" role="alert">{{ error }}</div>{% endif %}
+{% if tab != "note" %}
+<form class="card pad" method="post" action="/add">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <label class="field"><span>URL</span>
+    <input type="url" name="url" value="{{ url }}" required placeholder="https://…" {% if not url %}autofocus{% endif %}>
+    <small>Web pages become articles. GitHub repositories and URLs ending in <code>.git</code> are cloned with their history.</small>
+  </label>
+  {% if title %}<input type="hidden" name="title" value="{{ title }}"><p class="muted small">Page title: {{ title }}</p>{% endif %}
+  <label class="field"><span>Why?</span>
+    <textarea name="why" rows="3" placeholder="Why is this worth keeping? Without a reason it waits in the inbox." {% if url %}autofocus{% endif %}>{{ why or "" }}</textarea>
+  </label>
+  <div class="grid2">
+    <label class="field"><span>Tags</span><input type="text" name="tags" value="{{ tags or '' }}" placeholder="self-hosted, mcp"><small>Separated by spaces or commas.</small></label>
+    <label class="field"><span>Project</span><input type="text" name="project" value="{{ project or '' }}" placeholder="Optional"><small>Leave empty for the global library.</small></label>
+  </div>
+  <div class="row end"><a class="btn ghost" href="/">Cancel</a><button class="btn primary" type="submit">Save</button></div>
+</form>
+{% else %}
+<form class="card pad" method="post" action="/notes/new">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <label class="field"><span>Title</span><input type="text" name="title" value="{{ note_title or '' }}" required autofocus></label>
+  <label class="field"><span>Note</span><textarea name="body" rows="12" placeholder="Markdown is welcome.">{{ body or "" }}</textarea></label>
+  <label class="field"><span>Why?</span><input type="text" name="why" value="{{ why or '' }}" placeholder="Optional, but without it the note waits in the inbox."></label>
+  <div class="grid2">
+    <label class="field"><span>Tags</span><input type="text" name="tags" value="{{ tags or '' }}"></label>
+    <label class="field"><span>Project</span><input type="text" name="project" value="{{ project or '' }}"></label>
+  </div>
+  <div class="row end"><a class="btn ghost" href="/">Cancel</a><button class="btn primary" type="submit">Save note</button></div>
+</form>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,19 @@
+{% from "_macros.html" import result_card, icon %}
+{% if hits %}
+<div class="results">
+  {% for hit, row in hits %}{{ result_card(hit, row) }}{% endfor %}
+</div>
+<nav class="pager">
+  <span>{% if prev_url %}<a class="btn sm" href="{{ prev_url }}">← Previous</a>{% endif %}</span>
+  <span>{% if has_more %}<a class="btn sm" href="{{ next_url }}">{{ "More results" if q else "Older" }} →</a>{% endif %}</span>
+</nav>
+{% else %}
+<div class="empty card">
+  {{ icon("book", 40) }}
+  {% if q or tags or kind or status %}
+    <p>Nothing matches{% if q %} “{{ q }}”{% endif %}.</p>
+  {% else %}
+    <p>The shelves are empty. <a href="/add">Add your first link</a>, or let an agent save one through MCP.</p>
+  {% endif %}
+</div>
+{% endif %}

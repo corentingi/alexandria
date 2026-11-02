@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Sign in{% endblock %}
+{% block body %}
+<div class="login">
+  <form class="card" method="post" action="/login">
+    <div class="brand">{{ icon("logo", 32) }}<b>Alexandria</b></div>
+    {% if error %}<div class="notice bad" role="alert">{{ error }}</div>{% endif %}
+    <input type="hidden" name="next" value="{{ next }}">
+    <label class="field"><span>Access token</span>
+      <input type="password" name="token" autocomplete="current-password" autofocus required placeholder="alx_…">
+      <small>Paste a token once; this browser stays signed in. Create one with
+        <code>alexandria token create &lt;name&gt; --scope admin</code>. On first start an admin token is printed in the server log.</small>
+    </label>
+    <button class="btn primary block" type="submit">Sign in</button>
+  </form>
+</div>
+{% endblock %}

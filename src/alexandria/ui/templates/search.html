@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}{{ q or "Search" }}{% endblock %}
+{% block content %}
+{% if not q and not tags and not kind and not status and not project %}
+<div class="page-head">
+  <div><h1>Your library</h1><p>Everything you and your agents chose to keep, and why.</p></div>
+  <a class="btn primary" href="/add">{{ icon("plus", 16) }} Add</a>
+</div>
+<div class="stats">
+  <div class="card stat"><b>{{ stats.total }}</b><span>resources</span></div>
+  <div class="card stat"><b>{{ stats.kinds.get("article", 0) }}</b><span>articles</span></div>
+  <div class="card stat"><b>{{ stats.kinds.get("git_repo", 0) }}</b><span>repositories</span></div>
+  <div class="card stat"><b>{{ stats.kinds.get("note", 0) }}</b><span>notes</span></div>
+  <div class="card stat"><b>{{ stats.week }}</b><span>added this week</span></div>
+  <div class="card stat"><b>{{ stats.bytes | filesize }}</b><span>archived</span></div>
+</div>
+{% if stats.failed %}<div class="notice warn">{{ stats.failed }} resource{{ "s" if stats.failed > 1 }} failed to fetch. <a href="/activity?status=failed">See activity</a>.</div>{% endif %}
+{% endif %}
+
+<form id="search" action="/" method="get" role="search"
+      hx-get="/" hx-target="#results" hx-push-url="true" hx-indicator="#search-spin"
+      hx-trigger="input changed delay:250ms from:#q, change from:select, submit">
+  <div class="searchbar">
+    {{ icon("search", 20) }}
+    <input id="q" type="search" name="q" value="{{ q }}" placeholder="Search titles, reasons, notes and content…" autocomplete="off" {% if q or tags or kind or status %}autofocus{% endif %} aria-label="Search">
+    <kbd>/</kbd>
+  </div>
+  <div class="filters">
+    <select name="kind" aria-label="Kind">
+      <option value="">All kinds</option>
+      {% for k, label in [("article", "Articles"), ("git_repo", "Repositories"), ("note", "Notes")] %}
+      <option value="{{ k }}" {{ "selected" if kind == k }}>{{ label }}</option>{% endfor %}
+    </select>
+    <select name="status" aria-label="Status">
+      <option value="">Kept &amp; inbox</option>
+      {% for s in ["kept", "inbox", "archived"] %}<option value="{{ s }}" {{ "selected" if status == s }}>{{ s | capitalize }}</option>{% endfor %}
+    </select>
+    {% if project %}<input type="hidden" name="project" value="{{ project }}"><span class="badge accent">project: {{ project }}</span>{% endif %}
+    {% for t in tags %}<input type="hidden" name="tag" value="{{ t }}">{% endfor %}
+    <span id="search-spin" class="htmx-indicator"><span class="spinner"></span></span>
+    <noscript><button class="btn sm" type="submit">Search</button></noscript>
+  </div>
+</form>
+{% if all_tags %}
+<div class="chips" aria-label="Filter by tag">
+  {% for t, n in all_tags %}
+    {% set on = t in tags %}
+    {% set others = tags | reject("equalto", t) | list %}
+    <a class="tag {{ 'on' if on }}" href="/?{% if q %}q={{ q | urlquote }}&{% endif %}{% if kind %}kind={{ kind }}&{% endif %}{% if status %}status={{ status }}&{% endif %}{% for o in (others if on else tags + [t]) %}tag={{ o | urlquote }}&{% endfor %}">{{ t }} <span class="muted">{{ n }}</span></a>
+  {% endfor %}
+</div>
+{% endif %}
+<div id="results">{% include "_results.html" %}</div>
+{% endblock %}

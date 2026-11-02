@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Tags{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Tags</h1><p>{{ tags|length }} tag{{ "s" if tags|length != 1 }} in use. Click one to browse.</p></div></div>
+{% if tags %}
+<div class="card pad cloud">
+  {% for t, n in tags | sort %}
+    {% set w = (n / top) %}
+    <a href="/?tag={{ t | urlquote }}" class="{{ 'tag-xl' if w > 0.66 else ('tag-l' if w > 0.33 else '') }}">{{ t }}<sup>{{ n }}</sup></a>
+  {% endfor %}
+</div>
+{% else %}<div class="empty card"><p>No tags yet.</p></div>{% endif %}
+{% endblock %}
