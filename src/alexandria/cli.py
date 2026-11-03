@@ -276,6 +276,20 @@ def token_list() -> None:
         typer.echo(f"{t['name']:<24} {t['scope']:<6} {t.get('created_at', '')}")
 
 
+@token_app.command("scope")
+def token_scope(
+    name: str, scope: Annotated[str, typer.Argument(help="read | write | admin")]
+) -> None:
+    """Change a token's scope. The command line may remove the last admin (recovery)."""
+    try:
+        TokenStore(_settings().tokens_path).set_scope(
+            name, ScopeLevel.parse(scope), keep_an_admin=False
+        )
+    except ValueError as exc:
+        _fail(str(exc))
+    typer.echo(f"{name} is now {scope.lower()}.")
+
+
 @token_app.command("revoke")
 def token_revoke(name: str) -> None:
     """Revoke a token by name."""

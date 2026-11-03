@@ -21,6 +21,7 @@ or leak reads. It is server-rendered (Jinja2 + vendored htmx 2.0.4), with no bui
 - Artifacts and attachments are served as downloads (`Content-Disposition: attachment`,
   `CSP: sandbox`, `nosniff`), never rendered inline.
 - Tokens cannot be created in the UI; the secret is only ever printed by the CLI.
+  *Superseded by [ADR-0018](0018-manage-tokens-in-the-ui.md): admins manage tokens in the UI.*
 
 ## Cost
 

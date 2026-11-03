@@ -804,6 +804,10 @@ async def retry(c: Ctx, who: User, job_id: str) -> Response:
 
 @router.get("/settings")
 async def settings_page(request: Request, c: Ctx, who: User) -> Response:
+    return _settings_page(request, c, who)
+
+
+def _settings_page(request: Request, c: AppContext, who: Principal, **extra: Any) -> HTMLResponse:
     base = c.settings.http.public_url or str(request.base_url).rstrip("/")
     bookmarklet = (
         f"javascript:location.href='{base}/add?url='+encodeURIComponent(location.href)"
@@ -813,8 +817,69 @@ async def settings_page(request: Request, c: Ctx, who: User) -> Response:
     tokens = c.tokens.list() if admin else []
     transfers = _transfers(c) if admin else {}
     return render(
-        request, "settings.html", bookmarklet=bookmarklet, base=base, tokens=tokens, **transfers
+        request,
+        "settings.html",
+        bookmarklet=bookmarklet,
+        base=base,
+        tokens=tokens,
+        admins=sum(1 for t in tokens if t["scope"] == "admin"),
+        **transfers,
+        **extra,
     )
+
+
+# ---------------------------------------------------------------------- tokens (ADR-0018)
+
+
+@router.post("/settings/tokens", dependencies=[Csrf])
+async def create_token(
+    request: Request,
+    c: Ctx,
+    who: User,
+    name: Annotated[str, Form()] = "",
+    scope: Annotated[str, Form()] = "read",
+) -> Response:
+    need(who, ScopeLevel.ADMIN)
+    try:
+        level = ScopeLevel.parse(scope)
+        secret = c.tokens.create(name, level)
+    except ValueError as exc:
+        return _settings_page(request, c, who, token_error=str(exc), token_name=name)
+    # Shown once, in this response only: never in a URL, a log or a redirect.
+    response = _settings_page(
+        request, c, who, new_token={"name": name.strip(), "scope": level.label, "secret": secret}
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@router.post("/settings/tokens/{name}/scope", dependencies=[Csrf])
+async def token_scope(c: Ctx, who: User, name: str, scope: Annotated[str, Form()] = "") -> Response:
+    need(who, ScopeLevel.ADMIN)
+    if name == who.name:
+        return back(
+            "/settings#tokens",
+            error="You cannot change the scope of the token you are signed in with.",
+        )
+    try:
+        c.tokens.set_scope(name, ScopeLevel.parse(scope))
+    except ValueError as exc:
+        return back("/settings#tokens", error=str(exc))
+    return back("/settings#tokens", notice=f"{name} is now {scope.lower()}.")
+
+
+@router.post("/settings/tokens/{name}/revoke", dependencies=[Csrf])
+async def revoke_token(c: Ctx, who: User, name: str) -> Response:
+    need(who, ScopeLevel.ADMIN)
+    if name == who.name:
+        return back("/settings#tokens", error="You cannot revoke the token you are signed in with.")
+    try:
+        found = c.tokens.revoke(name, keep_an_admin=True)
+    except ValueError as exc:
+        return back("/settings#tokens", error=str(exc))
+    if not found:
+        return back("/settings#tokens", error=f"No token named {name}.")
+    return back("/settings#tokens", notice=f"Revoked {name}. Agents using it are locked out now.")
 
 
 def _transfers(c: AppContext) -> dict[str, Any]:

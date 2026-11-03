@@ -406,3 +406,10 @@ dialog.modal label.field { margin-bottom: 16px; }
 .files + form { margin-top: 12px; }
 .snap-head { display: flex; gap: 8px; align-items: center; }
 .snap-head .grow { flex: 1; }
+.inline-form { display: flex; gap: 6px; align-items: center; }
+.inline-form select { width: auto; padding: 4px 8px; }
+.token-form { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto; gap: 12px; align-items: end; }
+.token-form .field { margin-bottom: 0; }
+@media (max-width: 640px) { .token-form { grid-template-columns: 1fr; } }
+.token-secret pre { user-select: all; overflow-wrap: anywhere; white-space: pre-wrap; }
+.table-wrap + .section-title, form + .section-title { margin-top: 20px; }

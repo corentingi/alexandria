@@ -21,13 +21,37 @@
 </section>
 
 {% if user.can(ScopeLevel.ADMIN) %}
-<section class="card pad">
+<section class="card pad" id="tokens">
   <h2>Tokens</h2>
-  <p class="small">Tokens are created and revoked from the command line, so a secret is never shown in a browser: <code>alexandria token create &lt;name&gt; --scope read|write|admin</code>, <code>alexandria token revoke &lt;name&gt;</code>.</p>
+  <p class="small">Every person and agent gets its own token: <b>read</b> to search and read, <b>write</b> to also save and edit, <b>admin</b> to also delete, export and manage tokens. Revoking one locks it out at once.</p>
+  {% if new_token %}
+  <div class="notice ok token-secret" role="status">
+    <p><b>Token “{{ new_token.name }}” created ({{ new_token.scope }}).</b> Copy it now: it is shown only once and cannot be recovered.</p>
+    <div class="codeblock"><pre id="new-token">{{ new_token.secret }}</pre><button class="btn sm" type="button" data-copy="#new-token">Copy</button></div>
+  </div>
+  {% endif %}
+  {% if token_error %}<div class="notice bad" role="alert">{{ token_error }}</div>{% endif %}
   <div class="table-wrap"><table class="jobs">
-    <thead><tr><th>Name</th><th>Scope</th><th>Created</th></tr></thead>
-    <tbody>{% for t in tokens %}<tr><td><b>{{ t.name }}</b>{% if t.name == user.name %} <span class="badge accent">you</span>{% endif %}</td><td>{{ t.scope }}</td><td class="muted">{{ t.created_at | ago }}</td></tr>{% endfor %}</tbody>
+    <thead><tr><th>Name</th><th>Scope</th><th>Created</th><th></th></tr></thead>
+    <tbody>{% for t in tokens %}{% set me = t.name == user.name %}{% set last_admin = t.scope == "admin" and admins <= 1 %}
+      <tr>
+        <td><b>{{ t.name }}</b>{% if me %} <span class="badge accent">you</span>{% endif %}</td>
+        <td>{% if me or last_admin %}{{ t.scope }}{% if last_admin and not me %} <span class="muted small">(last admin)</span>{% endif %}
+          {% else %}<form class="inline-form" method="post" action="/settings/tokens/{{ t.name | urlquote }}/scope"><input type="hidden" name="csrf" value="{{ csrf }}">
+            <select name="scope" aria-label="Scope of {{ t.name }}">{% for s in ["read", "write", "admin"] %}<option value="{{ s }}" {{ "selected" if s == t.scope }}>{{ s }}</option>{% endfor %}</select>
+            <button class="btn sm ghost" type="submit">Change</button></form>{% endif %}</td>
+        <td class="muted nowrap">{{ t.created_at | ago }}</td>
+        <td>{% if not me and not last_admin %}<form method="post" action="/settings/tokens/{{ t.name | urlquote }}/revoke"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn sm danger" type="submit" data-confirm="Revoke {{ t.name }}? Anything using it loses access immediately.">Revoke</button></form>{% endif %}</td>
+      </tr>{% endfor %}</tbody>
   </table></div>
+  <p class="section-title">New token</p>
+  <form class="token-form" method="post" action="/settings/tokens">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label class="field"><span>Name</span><input type="text" name="name" required maxlength="40" value="{{ token_name or '' }}" placeholder="claude-desktop, laptop, phone…"></label>
+    <label class="field"><span>Scope</span><select name="scope"><option value="read">read</option><option value="write">write</option><option value="admin">admin</option></select></label>
+    <button class="btn primary" type="submit">Create token</button>
+  </form>
+  <p class="small muted">From a shell: <code>alexandria token create|list|scope|revoke</code>. The command line can also recover access if every admin token is lost.</p>
 </section>
 
 <section class="card pad" id="library">

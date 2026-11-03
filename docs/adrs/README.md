@@ -23,3 +23,4 @@ mark the old one superseded.
 | [0015](0015-library-export-and-import.md) | Library export and import as independent ~2 GB tar parts | Accepted |
 | [0016](0016-deleting-attachments-needs-admin.md) | Deleting an attachment or a snapshot needs the admin scope | Accepted |
 | [0017](0017-blocked-sites-and-attachment-text.md) | Sites that block fetches; attachment text standing in | Accepted |
+| [0018](0018-manage-tokens-in-the-ui.md) | Tokens are managed in the UI too (amends 0010) | Accepted |

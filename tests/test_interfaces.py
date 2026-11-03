@@ -9,6 +9,7 @@ from typing import Any
 from urllib.parse import unquote_plus
 
 import httpx
+import pytest
 from starlette.testclient import TestClient
 
 from alexandria.auth import ScopeLevel, TokenStore
@@ -307,6 +308,58 @@ class TestUi:
         last = client.delete(f"/api/v1/resources/{rid}/snapshots/{only}", headers=a)
         assert last.status_code == 400 and "only snapshot" in last.json()["detail"]
         assert f"/snapshots/{only}/delete" not in client.get(f"/r/{rid}").text
+
+    def test_manage_tokens(self, client: TestClient, tokens: dict[str, str]) -> None:
+        csrf = self.login(client, tokens["write"])
+        assert client.post("/settings/tokens", data={"csrf": csrf, "name": "x"}).status_code == 403
+        assert "New token" not in client.get("/settings").text
+
+        csrf = self.login(client, tokens["admin"])
+        res = client.post(
+            "/settings/tokens", data={"csrf": csrf, "name": "laptop", "scope": "write"}
+        )
+        assert res.status_code == 200 and res.headers["cache-control"] == "no-store"
+        match = re.search(r'<pre id="new-token">(alx_[^<]+)</pre>', res.text)
+        assert match, "the secret is shown once"
+        secret = match.group(1)
+        assert client.get("/api/v1/tags", headers=auth(secret)).status_code == 200
+        assert secret not in client.get("/settings").text  # never again
+
+        dup = client.post("/settings/tokens", data={"csrf": csrf, "name": "laptop"})
+        assert "already exists" in dup.text
+        bad = client.post("/settings/tokens", data={"csrf": csrf, "name": "<script>"})
+        assert "up to 40 letters" in bad.text
+
+        res = client.post("/settings/tokens/laptop/scope", data={"csrf": csrf, "scope": "read"},
+                          follow_redirects=False)  # fmt: skip
+        assert "laptop+is+now+read" in res.headers["location"]
+        body = {"url": "https://a.example/x"}
+        assert client.post("/api/v1/resources", json=body, headers=auth(secret)).status_code == 403
+
+        res = client.post("/settings/tokens/laptop/revoke", data={"csrf": csrf},
+                          follow_redirects=False)  # fmt: skip
+        assert "Revoked+laptop" in res.headers["location"]
+        assert client.get("/api/v1/tags", headers=auth(secret)).status_code == 401
+
+        # The signed-in token and the last admin token are protected.
+        me = client.post(
+            "/settings/tokens/admin/revoke", data={"csrf": csrf}, follow_redirects=False
+        )
+        assert "error=" in me.headers["location"]
+
+    def test_last_admin_is_kept(self, settings: Settings) -> None:
+        from alexandria.auth import TokenError
+
+        store = TokenStore(settings.tokens_path)
+        store.create("root", ScopeLevel.ADMIN)
+        store.create("bot", ScopeLevel.WRITE)
+        with pytest.raises(TokenError, match="last admin"):
+            store.revoke("root", keep_an_admin=True)
+        with pytest.raises(TokenError, match="last admin"):
+            store.set_scope("root", ScopeLevel.READ)
+        store.set_scope("bot", ScopeLevel.ADMIN)
+        assert store.revoke("root", keep_an_admin=True)
+        store.set_scope("bot", ScopeLevel.READ, keep_an_admin=False)  # the CLI may (recovery)
 
     def test_read_token_cannot_write(self, client: TestClient, tokens: dict[str, str]) -> None:
         csrf = self.login(client, tokens["read"])

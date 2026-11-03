@@ -33,7 +33,8 @@ open http://localhost:8080                     # paste the token to sign in
 Data goes to `./data` (set `ALEXANDRIA_VOLUME=/volume1/alexandria` on a NAS). The volume
 must be **local storage** (no NFS/SMB) and writable by uid 1000.
 
-More tokens: `docker compose exec alexandria alexandria token create claude --scope write`.
+More tokens: Settings → Tokens (create, change scope, revoke), or
+`docker compose exec alexandria alexandria token create claude --scope write`.
 
 ## Connect an agent
 

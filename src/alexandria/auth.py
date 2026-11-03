@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
+import re
 import secrets
 import threading
 from dataclasses import dataclass
@@ -20,6 +21,11 @@ import yaml
 from alexandria.models import iso, utcnow
 
 TOKEN_PREFIX = "alx_"  # noqa: S105 - a prefix, not a secret
+_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _.@-]{0,39}$")
+
+
+class TokenError(ValueError):
+    pass
 
 
 class ScopeLevel(IntEnum):
@@ -83,10 +89,14 @@ class TokenStore:
     def create(self, name: str, scope: ScopeLevel) -> str:
         name = name.strip()
         if not name:
-            raise ValueError("a token needs a name")
+            raise TokenError("a token needs a name")
+        if not _NAME.match(name):
+            raise TokenError(
+                "a token name has up to 40 letters, digits, spaces or . _ @ - characters"
+            )
         tokens = list(self._load())
         if any(t["name"] == name for t in tokens):
-            raise ValueError(f"a token named {name!r} already exists")
+            raise TokenError(f"a token named {name!r} already exists")
         secret = TOKEN_PREFIX + secrets.token_urlsafe(32)
         tokens.append(
             {
@@ -99,13 +109,26 @@ class TokenStore:
         self._save(tokens)
         return secret
 
-    def revoke(self, name: str) -> bool:
+    def revoke(self, name: str, keep_an_admin: bool = False) -> bool:
+        """Remove a token. With ``keep_an_admin``, refuse to remove the last admin one."""
         tokens = self._load()
         kept = [t for t in tokens if t["name"] != name]
         if len(kept) == len(tokens):
             return False
+        if keep_an_admin and not _has_admin(kept):
+            raise TokenError("this is the last admin token; create another admin token first")
         self._save(kept)
         return True
+
+    def set_scope(self, name: str, scope: ScopeLevel, keep_an_admin: bool = True) -> None:
+        tokens = [dict(t) for t in self._load()]
+        token = next((t for t in tokens if t["name"] == name), None)
+        if token is None:
+            raise TokenError(f"no token named {name!r}")
+        token["scope"] = scope.label
+        if keep_an_admin and not _has_admin(tokens):
+            raise TokenError("this is the last admin token; create another admin token first")
+        self._save(tokens)
 
     def verify(self, secret: str | None) -> Principal | None:
         if not secret:
@@ -120,6 +143,10 @@ class TokenStore:
 
     def is_empty(self) -> bool:
         return not self._load()
+
+
+def _has_admin(tokens: list[dict[str, Any]]) -> bool:
+    return any(t.get("scope") == ScopeLevel.ADMIN.label for t in tokens)
 
 
 def _hash(secret: str) -> str:
