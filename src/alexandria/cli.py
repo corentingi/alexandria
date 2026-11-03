@@ -70,7 +70,9 @@ def serve(
         host=host or settings.http.host,
         port=port or settings.http.port,
         log_level=log_level.lower(),
-        proxy_headers=False,
+        # Only a configured reverse proxy may say the request came over https.
+        proxy_headers=bool(settings.http.forwarded_allow_ips),
+        forwarded_allow_ips=settings.http.forwarded_allow_ips or "127.0.0.1",
     )
 
 

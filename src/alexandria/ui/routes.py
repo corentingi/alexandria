@@ -170,6 +170,12 @@ def back(url: str, notice: str | None = None, error: str | None = None) -> Redir
     return RedirectResponse(path + hash_ + fragment, status_code=303)
 
 
+def _https(request: Request) -> bool:
+    """The browser talks https: directly, through a trusted proxy, or per public_url."""
+    public = ctx(request).settings.http.public_url or ""
+    return request.url.scheme == "https" or public.lower().startswith("https://")
+
+
 def _safe_next(value: str | None) -> str:
     if not value or not value.startswith("/") or value.startswith("//"):
         return "/"
@@ -262,7 +268,7 @@ async def login(
         httponly=True,
         samesite="lax",
         max_age=60 * 60 * 24 * 90,
-        secure=request.url.scheme == "https",
+        secure=_https(request),
     )
     return response
 

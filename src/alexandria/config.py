@@ -28,7 +28,11 @@ class HttpSettings(BaseModel):
     port: int = 8080
     session_secret: str | None = None
     # Public base URL used in the bookmarklet. Derived from the request when unset.
+    # An https:// URL also marks the session cookie Secure (TLS ends at a proxy).
     public_url: str | None = None
+    # Reverse proxies whose X-Forwarded-* headers are trusted ("*" or comma-separated
+    # IPs), e.g. the Synology reverse proxy. Unset: those headers are ignored.
+    forwarded_allow_ips: str | None = None
 
 
 class FetchSettings(BaseModel):

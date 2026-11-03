@@ -361,6 +361,16 @@ class TestUi:
         assert store.revoke("root", keep_an_admin=True)
         store.set_scope("bot", ScopeLevel.READ, keep_an_admin=False)  # the CLI may (recovery)
 
+    def test_cookie_is_secure_behind_an_https_proxy(
+        self, client: TestClient, tokens: dict[str, str], settings: Settings
+    ) -> None:
+        res = client.post("/login", data={"token": tokens["read"]}, follow_redirects=False)
+        assert "secure" not in res.headers["set-cookie"].lower()  # plain http on the LAN
+        settings.http.public_url = "https://library.example.org"
+        res = client.post("/login", data={"token": tokens["read"]}, follow_redirects=False)
+        cookie = res.headers["set-cookie"].lower()
+        assert "secure" in cookie and "httponly" in cookie and "samesite=lax" in cookie
+
     def test_read_token_cannot_write(self, client: TestClient, tokens: dict[str, str]) -> None:
         csrf = self.login(client, tokens["read"])
         assert client.post("/add", data={"url": URL, "csrf": csrf}).status_code == 403
