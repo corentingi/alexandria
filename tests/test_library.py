@@ -356,6 +356,34 @@ class TestGit:
         assert clone.history == "shallow" and clone.depth == 2
         assert (clone.path / "shallow").exists()
 
+    async def test_attach_github_page_clones_project(
+        self, library: Library, worker: Worker, source_repo: Path, tmp_path: Path
+    ) -> None:
+        fetcher = library.fetchers[Kind.GIT_REPO]
+        real_clone = fetcher._clone  # type: ignore[attr-defined]
+        seen: list[str] = []
+
+        async def local_clone(url: str, work: Path, size_kb: int | None):  # type: ignore[no-untyped-def]
+            seen.append(url)
+            return await real_clone(f"file://{source_repo}", work, size_kb)
+
+        fetcher._clone = local_clone  # type: ignore[attr-defined]
+        note = await library.create_note("Reading list", "x")
+        await library.attach_url(note.id, "https://github.com/Owner/Repo/tree/main/docs")
+        await worker.drain()
+        assert seen == ["https://github.com/owner/repo.git"]
+        [attachment] = library.get(note.id).attachments
+        assert attachment.path == "owner-repo.git.tar.gz"
+        assert attachment.mime == "application/gzip"
+        assert attachment.origin_url == "https://github.com/Owner/Repo/tree/main/docs"
+        archive = library.files.attachments_dir(note.id) / attachment.path
+        out = tmp_path / "restore-attachment"
+        out.mkdir()
+        with tarfile.open(archive) as tar:
+            tar.extractall(out, filter="data")
+        git(out, "clone", "repository.git", "checkout")
+        assert "quokkas" in (out / "checkout" / "README.md").read_text()
+
     async def test_github_metadata(
         self, library: Library, worker: Worker, source_repo: Path
     ) -> None:

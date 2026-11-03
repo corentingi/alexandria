@@ -46,6 +46,13 @@ class CloneResult:
     depth: int | None
 
 
+@dataclass
+class ArchivedRepo:
+    path: Path
+    clone_url: str
+    history: str  # full | shallow
+
+
 class GitError(FetchError):
     def __init__(self, message: str, permanent: bool = False, too_large: bool = False) -> None:
         super().__init__(message, permanent=permanent or too_large)
@@ -155,6 +162,34 @@ class GitRepoFetcher:
             title=title,
             text_role="readme" if readme_found else None,
         )
+
+    async def archive(self, url: str, staging_dir: Path) -> ArchivedRepo:
+        """Clone ``url`` (a repository page or ``.git`` URL) into ``<name>.git.tar.gz``.
+
+        Used to attach a repository to another resource: the same bare clone, limits and
+        guards as a fetch, without the GitHub metadata or README.
+        """
+        if url.startswith("file://") and "file" in self.allowed_protocols:
+            detected = Detected(kind=Kind.GIT_REPO, canonical_url=url, clone_url=url)
+        else:
+            detected = detect(url, Kind.GIT_REPO)
+        clone_url = detected.clone_url or url
+        if detected.owner and detected.repo:
+            name = f"{detected.owner}-{detected.repo}"
+        else:
+            name = _title_from_url(detected.canonical_url).replace("/", "-")
+        await self._guard(clone_url)
+        work = staging_dir / "work"
+        work.mkdir()
+        try:
+            clone = await self._clone(clone_url, work, None)
+            if _dir_size(clone.path) / 1_000_000 > self.settings.git.max_archive_mb:
+                raise GitError("repository is larger than git.max_archive_mb", too_large=True)
+            archive = staging_dir / f"{name}.git.tar.gz"
+            await asyncio.to_thread(_make_tarball, clone.path, archive)
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+        return ArchivedRepo(archive, clone_url, clone.history)
 
     # -- GitHub API ----------------------------------------------------------------
 

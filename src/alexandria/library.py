@@ -707,6 +707,20 @@ class Library:
             raise PermanentFetchError("resource was deleted")
         staging = self.files.new_staging_dir(job.id)
         try:
+            git = self.fetchers.get(Kind.GIT_REPO)
+            if _is_repository(url) and isinstance(git, GitRepoFetcher):
+                # A repository page (github.com/owner/repo/...) or a .git URL: attach a
+                # bare clone of the project rather than the HTML of the page.
+                repo = await git.archive(url, staging)
+                await self._store_attachment(
+                    job.resource_id,
+                    repo.path,
+                    repo.path.name,
+                    "application/gzip",
+                    url,
+                    job.payload.get("added_by"),
+                )
+                return
             downloaded = await download_attachment(url, staging, self.settings)
             await self._store_attachment(
                 job.resource_id,
@@ -975,6 +989,13 @@ class Library:
 
     def stats(self) -> dict[str, Any]:
         return {"by_status": self.index.counts(), "now": iso(utcnow())}
+
+
+def _is_repository(url: str) -> bool:
+    try:
+        return detect(url).kind == Kind.GIT_REPO
+    except InvalidURL:
+        return False
 
 
 def _write_json(path: Path, report: LibraryImportReport) -> None:

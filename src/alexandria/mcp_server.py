@@ -235,7 +235,11 @@ def build_mcp(ctx: AppContext) -> MCPServer[Any]:
     @mcp.tool()
     @guarded
     async def attach_url(context: Context[Any, Any], ref: str, url: str) -> dict[str, Any]:
-        """Download a file (release archive, PDF…) in the background and attach it."""
+        """Download a file (release archive, PDF…) in the background and attach it.
+
+        A repository URL (any github.com/<owner>/<repo>/… page, or a URL ending in .git)
+        attaches a bare clone of the project as <owner>-<repo>.git.tar.gz instead.
+        """
         principal = who(context, ScopeLevel.WRITE)
         job_id = await lib.attach_url(ref, url, principal.name)
         ctx.enqueued()
