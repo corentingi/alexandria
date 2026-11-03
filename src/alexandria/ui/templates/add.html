@@ -52,7 +52,9 @@
 <form class="card pad" method="post" action="/add">
   <input type="hidden" name="csrf" value="{{ csrf }}">
   <label class="field"><span>URL</span>
-    <input type="url" name="url" value="{{ url }}" required placeholder="https://…" {% if not url %}autofocus{% endif %}>
+    <input type="url" name="url" value="{{ url }}" required placeholder="https://…" {% if not url %}autofocus{% endif %}
+           hx-get="/add/check" hx-trigger="input changed delay:250ms" hx-target="#site-warning" hx-swap="innerHTML">
+    <div id="site-warning">{% include "_site_warning.html" %}</div>
     <small>Web pages become articles. GitHub repositories and URLs ending in <code>.git</code> are cloned with their history.</small>
   </label>
   {% if title %}<input type="hidden" name="title" value="{{ title }}"><p class="muted small">Page title: {{ title }}</p>{% endif %}

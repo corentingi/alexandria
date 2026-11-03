@@ -27,10 +27,12 @@ from starlette.datastructures import UploadFile as StarletteUpload
 from alexandria import __version__
 from alexandria.auth import Principal, ScopeLevel, TokenStore
 from alexandria.context import AppContext
+from alexandria.extract import detect_format
 from alexandria.library import InvalidInput, NotFound, Update
 from alexandria.models import Kind, Resource, Status, iso
 from alexandria.storage.index import HL_END, HL_START, SearchFilters
 from alexandria.views import plain_snippet
+from alexandria.walls import site_warning
 
 router = APIRouter(include_in_schema=False)
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
@@ -376,7 +378,14 @@ async def set_why(
 async def add_page(
     request: Request, who: User, url: str = "", title: str = "", tab: str = "url"
 ) -> Response:
-    return render(request, "add.html", url=url, title=title, tab=tab)
+    warning = site_warning(url) if url else None
+    return render(request, "add.html", url=url, title=title, tab=tab, warning=warning)
+
+
+@router.get("/add/check")
+async def add_check(request: Request, who: User, url: str = "") -> Response:
+    """Live warning under the URL field for sites that need a login or block fetches."""
+    return render(request, "_site_warning.html", warning=site_warning(url) if url else None)
 
 
 @router.post("/add", dependencies=[Csrf])
@@ -521,6 +530,7 @@ async def resource_page(
 ) -> Response:
     resource = _load(c, ref)
     shown = resource.snapshot(snapshot) if snapshot else resource.snapshot()
+    from_attachment = None
     content, role = "", None
     if resource.kind == Kind.NOTE:
         content, role = resource.notes, "note"
@@ -533,6 +543,22 @@ async def resource_page(
                 content = path.read_text(encoding="utf-8", errors="replace") if exists else ""
                 role = wanted
                 break
+    if snapshot is None and resource.kind != Kind.NOTE:
+        text, used = c.library.text(resource)
+        if used == "attachment":  # the page is blocked or empty: show the attachment's text
+            found = c.library.attachment_text(resource)
+            content, role = text, "attachment"
+            from_attachment = found[1].path if found else None
+    directory = c.library.files.attachments_dir(resource.id)
+    extractable = {
+        a.path
+        for a in resource.attachments
+        if a.extraction is None
+        and (directory / a.path).is_file()
+        and detect_format(directory / a.path, a.path, a.mime)
+    }
+    url = resource.canonical_url or resource.source_url
+    warning = site_warning(url) if url and resource.kind == Kind.ARTICLE else None
     jobs = c.library.index.jobs(resource_id=resource.id, limit=20)
     duplicate_of = None
     if dup := resource.meta.get("possible_duplicate_of"):
@@ -551,6 +577,9 @@ async def resource_page(
         error=error,
         captured=iso(resource.captured_at),
         editing=edit if who.can(ScopeLevel.WRITE) else None,
+        from_attachment=from_attachment,
+        extractable=extractable,
+        site_warning=warning,
     )
 
 
@@ -641,6 +670,17 @@ async def attach(
     except InvalidInput as exc:
         return back(f"/r/{ref}", error=str(exc))
     return back(f"/r/{ref}", error="Choose a file or give a URL.")
+
+
+@router.post("/r/{ref}/attachments/{path}/extract", dependencies=[Csrf])
+async def extract_attachment(c: Ctx, who: User, ref: str, path: str) -> Response:
+    need(who, ScopeLevel.WRITE)
+    try:
+        c.library.extract_attachment(ref, path)
+    except NotFound as exc:
+        return back(f"/r/{ref}", error=str(exc))
+    c.enqueued()
+    return back(f"/r/{ref}", notice=f"Extracting the text of {path}…")
 
 
 @router.post("/r/{ref}/attachments/{path}/delete", dependencies=[Csrf])

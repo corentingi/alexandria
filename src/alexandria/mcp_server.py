@@ -24,6 +24,7 @@ from alexandria.models import Kind, Status
 from alexandria.models import Scope as ResourceScope
 from alexandria.storage.index import SearchFilters
 from alexandria.views import resource_detail, search_result
+from alexandria.walls import site_warning
 
 INSTRUCTIONS = """\
 Alexandria is the user's personal knowledge base: articles, git repositories and notes they \
@@ -172,7 +173,9 @@ def build_mcp(ctx: AppContext) -> MCPServer[Any]:
 
         GitHub URLs (and URLs ending in .git) are archived as git repositories, anything else
         as an article. If the URL is already saved, returns the existing resource with
-        duplicate=true and changes nothing. Always give `why`.
+        duplicate=true and changes nothing. Always give `why`. A `warning` means the site
+        usually blocks fetches or needs a login: tell the user, who can attach a PDF of the
+        page; or save the text yourself with create_note if you already have it.
         """
         principal = who(context, ScopeLevel.WRITE)
         result = await lib.ingest(
@@ -187,6 +190,7 @@ def build_mcp(ctx: AppContext) -> MCPServer[Any]:
             "status": r.status.value,
             "fetch_status": r.fetch_status.value,
             "duplicate": result.duplicate,
+            **({"warning": w.message} if (w := site_warning(r.canonical_url or url)) else {}),
         }
 
     @mcp.tool()

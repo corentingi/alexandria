@@ -9,6 +9,8 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from alexandria.models import Kind
 
 TRACKING_PARAMS = {"fbclid", "gclid", "mc_cid", "mc_eid", "ref"}
+# Left in the address bar by bot checks (Reddit's JS challenge): never part of the page.
+CHALLENGE_PARAMS = {"js_challenge", "jsc_token", "jsc_orig_r", "solution"}
 _DEFAULT_PORTS = {"http": 80, "https": 443}
 _GITHUB_RE = re.compile(r"^/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?(?:/.*)?$")
 # GitHub paths that look like /<owner>/<repo> but are not repositories.
@@ -52,10 +54,12 @@ def canonicalize(url: str) -> str:
     netloc = f"[{host}]" if ":" in host else host
     if port is not None and port != _DEFAULT_PORTS.get(scheme):
         netloc = f"{netloc}:{port}"
+    pairs = parse_qsl(parts.query, keep_blank_values=True)
+    drop = set(TRACKING_PARAMS)
+    if any(k.lower() == "js_challenge" for k, _ in pairs):
+        drop |= CHALLENGE_PARAMS
     query = sorted(
-        (k, v)
-        for k, v in parse_qsl(parts.query, keep_blank_values=True)
-        if not k.lower().startswith("utm_") and k.lower() not in TRACKING_PARAMS
+        (k, v) for k, v in pairs if not k.lower().startswith("utm_") and k.lower() not in drop
     )
     path = parts.path or "/"
     if path != "/" and path.endswith("/"):

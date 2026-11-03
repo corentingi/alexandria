@@ -118,6 +118,7 @@ def resource_detail(
                         "origin_url": a.origin_url,
                         "added_at": iso(a.added_at),
                         "added_by": a.added_by,
+                        "extraction": a.extraction,
                     }
                 )
                 for a in resource.attachments

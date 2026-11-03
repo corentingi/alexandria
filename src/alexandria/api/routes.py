@@ -15,6 +15,7 @@ from alexandria.library import Update
 from alexandria.models import Kind, Scope, Status
 from alexandria.storage.index import SearchFilters
 from alexandria.views import job_view, resource_detail, search_result
+from alexandria.walls import site_warning
 
 router = APIRouter(prefix="/api/v1")
 
@@ -109,6 +110,8 @@ async def ingest(body: IngestBody, c: Ctx, who: Writer) -> JSONResponse:
         "fetch_status": r.fetch_status.value,
         "duplicate": result.duplicate,
     }
+    if warning := site_warning(r.canonical_url or body.url):
+        payload["warning"] = warning.message
     return JSONResponse(payload, status_code=200 if result.duplicate else 202)
 
 

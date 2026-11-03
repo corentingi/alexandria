@@ -78,6 +78,9 @@ class Attachment(BaseModel):
     origin_url: str | None = None
     added_at: datetime
     added_by: str | None = None
+    # Text extracted from the file (PDF, DOCX…), relative to attachments/ (ADR-0017).
+    text_path: str | None = None
+    extraction: str | None = None  # ok | poor | failed | unsupported
 
 
 class Resource(BaseModel):

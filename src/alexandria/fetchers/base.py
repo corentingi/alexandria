@@ -13,6 +13,7 @@ import httpx
 from alexandria.config import Settings
 from alexandria.models import Artifact, Resource
 from alexandria.security import BlockedURL, check_url
+from alexandria.walls import AFTER_TIP, site_warning
 
 
 class FetchError(Exception):
@@ -153,6 +154,8 @@ def _raise_for_status(response: httpx.Response) -> None:
     if code < 400:
         return
     message = f"HTTP {code} from {response.url}"
+    if code in (401, 403, 429) and (warning := site_warning(str(response.url))):
+        message = f"{message}: {warning.message.split('. ', 1)[0]}. {AFTER_TIP}"
     if code in _PERMANENT_STATUS:
         raise PermanentFetchError(message)
     raise FetchError(message)

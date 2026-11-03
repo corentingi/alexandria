@@ -572,7 +572,7 @@ def _upsert(
         db.executemany(
             "INSERT INTO chunks (resource_id, snapshot, ord, heading_path, source_role, text) "
             "VALUES (?,?,?,?,?,?)",
-            [(r.id, r.current_snapshot, c.ord, c.heading_path, source_role, c.text)
+            [(r.id, r.current_snapshot, c.ord, c.heading_path, c.role or source_role, c.text)
              for c in chunks],
         )  # fmt: skip
 

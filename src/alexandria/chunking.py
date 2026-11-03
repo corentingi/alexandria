@@ -20,6 +20,7 @@ class Chunk:
     ord: int
     heading_path: str
     text: str
+    role: str | None = None  # overrides the upsert's source role (attachment text)
 
 
 def chunk_markdown(text: str, max_chars: int = MAX_CHARS) -> list[Chunk]:

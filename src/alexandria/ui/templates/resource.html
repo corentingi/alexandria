@@ -18,12 +18,16 @@
   </div>
 </header>
 
-{% if r.fetch_status.value == "failed" or (r.fetch_error and r.fetch_status.value != "fetching") %}
+{% if from_attachment %}
+<div class="notice">{% if r.fetch_error %}The page could not be fetched ({{ r.fetch_error.split(". ")[0] }}). {% else %}The page itself had little or no text. {% endif %}Showing the text extracted from the attachment <b>{{ from_attachment }}</b>.</div>
+{% elif r.fetch_status.value == "failed" or (r.fetch_error and r.fetch_status.value != "fetching") %}
 <div class="notice bad"><b>Last fetch failed:</b> {{ r.fetch_error }}</div>
 {% endif %}
 {% if duplicate_of %}<div class="notice warn">The content looks identical to <a href="/r/{{ duplicate_of.slug }}">{{ duplicate_of.title }}</a>.</div>{% endif %}
 {% set ex = r.meta.get("extraction") %}
-{% if ex == "poor" %}<div class="notice warn">Little text could be extracted{% if r.kind.value == "document" or r.meta.get("format") %} (a scanned document without a text layer?){% else %} from this page (it may need JavaScript){% endif %}. The original is archived.</div>
+{% if from_attachment %}
+{% elif site_warning and not r.fetch_error %}<div class="notice warn"><b>Heads-up:</b> {{ site_warning.message }}</div>
+{% elif ex == "poor" %}<div class="notice warn">Little text could be extracted{% if r.kind.value == "document" or r.meta.get("format") %} (a scanned document without a text layer?){% else %} from this page (it may need JavaScript){% endif %}. The original is archived.</div>
 {% elif ex == "unsupported" %}<div class="notice warn">Text is not extracted from this kind of file yet. The original is kept and can be analysed later.</div>
 {% elif ex == "failed" %}<div class="notice warn">The file could not be read: {{ r.meta.get("extraction_error") }}. The original is kept.</div>{% endif %}
 
@@ -43,11 +47,11 @@
     </section>
 
     <section class="card pad">
-      <div class="row card-head"><h2 class="grow">{% if r.kind.value == "note" %}Note{% elif content_role == "readme" %}README{% elif r.kind.value == "document" %}Extracted text{% else %}Content{% endif %}</h2>
+      <div class="row card-head"><h2 class="grow">{% if r.kind.value == "note" %}Note{% elif content_role == "attachment" %}Text from the attachment{% elif content_role == "readme" %}README{% elif r.kind.value == "document" %}Extracted text{% else %}Content{% endif %}</h2>
         {% if r.snapshots|length > 1 and shown %}<span class="small muted">snapshot {{ shown.id | snapdate }}{% if shown.id != r.current_snapshot %} · <a href="/r/{{ r.slug }}">see current</a>{% endif %}</span>{% endif %}
         {% if r.kind.value == "note" and user.can(ScopeLevel.WRITE) and editing != "note" %}<a class="btn sm" href="/r/{{ r.slug }}?edit=note#note">{{ icon("note", 13) }} Edit</a>{% endif %}
       </div>
-      {% if r.kind.value != "note" and content %}<div class="untrusted-label">{{ icon("shield", 14) }} {{ "Extracted from the file" if r.kind.value == "document" else "Fetched from the source" }}; shown as data. Links open in a new tab, images are not loaded.</div>{% endif %}
+      {% if r.kind.value != "note" and content %}<div class="untrusted-label">{{ icon("shield", 14) }} {{ "Extracted from " ~ from_attachment if from_attachment else ("Extracted from the file" if r.kind.value == "document" else "Fetched from the source") }}; shown as data. Links open in a new tab, images are not loaded.</div>{% endif %}
       {% if r.kind.value == "note" and editing == "note" %}
         <form method="post" action="/r/{{ r.slug }}/edit" id="note"><input type="hidden" name="csrf" value="{{ csrf }}">
           <textarea name="notes" rows="18" autofocus>{{ r.notes }}</textarea>
@@ -154,7 +158,8 @@
       {% if r.attachments %}
       <ul class="files">{% for a in r.attachments %}<li>
         <a class="file" href="/r/{{ r.slug }}/files/attachments/{{ a.path }}" title="{{ a.origin_url or a.path }}">{{ icon("download", 13) }}<span>{{ a.path }}</span></a>
-        <span class="muted nowrap">{{ a.size | filesize }}</span>
+        <span class="muted nowrap">{{ a.size | filesize }}{% if a.extraction == "ok" %} · <span class="badge ok" title="Its text is searched">text</span>{% elif a.extraction == "poor" %} · <span class="badge warn" title="Little text found (a scan?)">little text</span>{% elif a.extraction == "failed" %} · <span class="badge bad">unreadable</span>{% endif %}</span>
+        {% if a.path in extractable and user.can(ScopeLevel.WRITE) %}<form method="post" action="/r/{{ r.slug }}/attachments/{{ a.path | urlquote }}/extract"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn sm" type="submit" title="Extract its text so it is searched">Extract text</button></form>{% endif %}
         {% if user.can(ScopeLevel.ADMIN) %}<form method="post" action="/r/{{ r.slug }}/attachments/{{ a.path | urlquote }}/delete"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="icon-btn" type="submit" title="Delete {{ a.path }}" aria-label="Delete {{ a.path }}" data-confirm="Delete the attachment {{ a.path }}?">{{ icon("trash", 14) }}</button></form>{% endif %}
       </li>{% endfor %}</ul>
       {% endif %}
@@ -191,7 +196,7 @@
     <section class="card pad">
       <p class="section-title">History</p>
       <ul class="timeline">
-        {% for j in jobs %}<li><b>{{ {"fetch": ("extract" if r.kind.value == "document" else "fetch"), "attach_url": "attachment download", "reindex_resource": "re-index"}.get(j.type, j.type) }}</b> <span class="badge {{ {'done': 'ok', 'failed': 'bad', 'running': 'warn', 'queued': 'warn'}[j.status] }}">{{ j.status }}</span><br><span class="muted small">{{ j.updated_at | ago }}{% if j.attempts > 1 %} · {{ j.attempts }} attempts{% endif %}</span>{% if j.error and j.status != "done" %}<div class="small muted">{{ j.error }}</div>{% endif %}</li>{% endfor %}
+        {% for j in jobs %}<li><b>{{ {"fetch": ("extract" if r.kind.value == "document" else "fetch"), "attach_url": "attachment download", "extract_attachment": "attachment text", "reindex_resource": "re-index"}.get(j.type, j.type) }}</b> <span class="badge {{ {'done': 'ok', 'failed': 'bad', 'running': 'warn', 'queued': 'warn'}[j.status] }}">{{ j.status }}</span><br><span class="muted small">{{ j.updated_at | ago }}{% if j.attempts > 1 %} · {{ j.attempts }} attempts{% endif %}</span>{% if j.error and j.status != "done" %}<div class="small muted">{{ j.error }}</div>{% endif %}</li>{% endfor %}
       </ul>
     </section>
     {% endif %}

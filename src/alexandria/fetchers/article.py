@@ -12,10 +12,11 @@ import trafilatura
 from trafilatura.metadata import extract_metadata
 
 from alexandria.config import Settings
-from alexandria.fetchers.base import SnapshotResult, download
+from alexandria.fetchers.base import PermanentFetchError, SnapshotResult, download
 from alexandria.fetchers.document import extract_to
 from alexandria.models import Resource
 from alexandria.storage.files import describe_file
+from alexandria.walls import detect_block
 
 POOR_EXTRACTION_CHARS = 500
 _HTML_TYPES = ("text/html", "application/xhtml+xml")
@@ -44,6 +45,8 @@ class ArticleFetcher:
             body_path.rename(page)
             artifacts.append(describe_file(page, "page"))
             markdown, extracted = await asyncio.to_thread(_extract, raw, result.final_url)
+            if blocked := detect_block(raw, result.final_url, len(markdown or "")):
+                raise PermanentFetchError(blocked)
             if markdown:
                 content = staging_dir / "content.md"
                 content.write_text(markdown + "\n", encoding="utf-8")

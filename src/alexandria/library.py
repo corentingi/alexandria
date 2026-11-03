@@ -21,10 +21,11 @@ from urllib.parse import urlsplit
 
 from alexandria.chunking import Chunk, chunk_markdown
 from alexandria.config import Settings
+from alexandria.extract import detect_format
 from alexandria.fetchers.article import ArticleFetcher
 from alexandria.fetchers.attachment import download_attachment
 from alexandria.fetchers.base import Fetcher, FetchError, PermanentFetchError, SnapshotResult
-from alexandria.fetchers.document import DocumentFetcher
+from alexandria.fetchers.document import DocumentFetcher, extract_to
 from alexandria.fetchers.git_repo import GitRepoFetcher
 from alexandria.ids import new_id, unique_slug
 from alexandria.models import (
@@ -71,6 +72,9 @@ _SNAPSHOT_META_KEYS = {
 }  # fmt: skip
 
 MAX_CONTENT_CHARS = 50_000
+# Extracted text of attachments: attachments/.text/<name>.md (a dot name never collides
+# with a sanitized attachment name).
+ATTACHMENT_TEXT_DIR = ".text"
 
 
 class NotFound(LookupError):
@@ -183,7 +187,19 @@ class Library:
         return self.index.list_tags()
 
     def text(self, resource: Resource) -> tuple[str, str | None]:
-        """Full text of the current content and the role it came from."""
+        """Full text of the current content and the role it came from.
+
+        When the fetched page has no usable text (blocked, failed, or poor extraction) and
+        an attachment has extracted text, that text stands in, with role ``attachment``.
+        """
+        text, role = self._main_text(resource)
+        if not text.strip() or _weak(resource):
+            found = self.attachment_text(resource)
+            if found is not None:
+                return found[0], "attachment"
+        return text, role
+
+    def _main_text(self, resource: Resource) -> tuple[str, str | None]:
         if resource.kind == Kind.NOTE:
             return resource.notes, "note"
         for role in ("content", "readme"):
@@ -191,6 +207,23 @@ class Library:
             if text is not None:
                 return text, role
         return "", None
+
+    def attachment_text(self, resource: Resource) -> tuple[str, Attachment] | None:
+        """The first attachment with extracted text, and that text."""
+        for attachment in resource.attachments:
+            text = self._read_attachment_text(resource.id, attachment)
+            if text and text.strip():
+                return text, attachment
+        return None
+
+    def _read_attachment_text(self, resource_id: str, attachment: Attachment) -> str | None:
+        if not attachment.text_path:
+            return None
+        try:
+            path = safe_join(self.files.attachments_dir(resource_id), attachment.text_path)
+            return path.read_text(encoding="utf-8")
+        except OSError, PermissionError:
+            return None
 
     def content(
         self,
@@ -420,7 +453,8 @@ class Library:
             )
             resource.status = Status.KEPT if resource.why else Status.INBOX
             self.files.write(resource)
-            self.index.upsert(resource, chunk_markdown(resource.notes), "note")
+            chunks, role = self._chunks_for(resource)
+            self.index.upsert(resource, chunks, role or "note")
         return resource
 
     async def update(self, ref: str, changes: Update) -> Resource:
@@ -456,7 +490,8 @@ class Library:
             resource.updated_at = utcnow()
             self.files.write(resource)
             if resource.kind == Kind.NOTE and changes.notes is not None:
-                self.index.upsert(resource, chunk_markdown(resource.notes), "note")
+                chunks, role = self._chunks_for(resource)
+                self.index.upsert(resource, chunks, role or "note")
             else:
                 self.index.upsert(resource, None)
         return resource
@@ -522,9 +557,12 @@ class Library:
             self.files.write(
                 resource
             )  # file first: an orphan file is harmless, a dangling entry is not
-            target = safe_join(self.files.attachments_dir(resource_id), attachment.path)
-            target.unlink(missing_ok=True)
-            self.index.upsert(resource, None)
+            directory = self.files.attachments_dir(resource_id)
+            safe_join(directory, attachment.path).unlink(missing_ok=True)
+            if attachment.text_path:
+                safe_join(directory, attachment.text_path).unlink(missing_ok=True)
+            chunks, role = self._chunks_for(resource)
+            self.index.upsert(resource, chunks, role or "")
 
     async def attach_url(self, ref: str, url: str, added_by: str | None = None) -> str:
         resource_id = self.resolve(ref)
@@ -587,6 +625,7 @@ class Library:
             "fetch": self._job_fetch,
             "attach_url": self._job_attach_url,
             "reindex_resource": self._job_reindex,
+            "extract_attachment": self._job_extract_attachment,
             "export": self._job_export,
             "import_library": self._job_import_library,
         }
@@ -784,7 +823,60 @@ class Library:
             resource.updated_at = utcnow()
             self.files.write(resource)
             self.index.upsert(resource, None)
+        if detect_format(target, name, attachment.mime) is not None:
+            self._enqueue("extract_attachment", resource_id, {"path": name})
         return attachment
+
+    def extract_attachment(self, ref: str, path: str) -> str:
+        """Queue (again) the text extraction of one attachment."""
+        resource = self.get(ref)
+        if not any(a.path == path for a in resource.attachments):
+            raise NotFound(f"no attachment {path!r} on {ref}")
+        return self._enqueue("extract_attachment", resource.id, {"path": path})
+
+    async def _job_extract_attachment(self, job: Job) -> None:
+        assert job.resource_id
+        resource_id, name = job.resource_id, str(job.payload["path"])
+        if not self.files.exists(resource_id):
+            raise PermanentFetchError("resource was deleted")
+        directory = self.files.attachments_dir(resource_id)
+        attachments = self.files.read(resource_id).attachments
+        current = next((a for a in attachments if a.path == name), None)
+        if current is None:
+            raise PermanentFetchError(f"attachment {name} was deleted")
+        staging = self.files.new_staging_dir(job.id)
+        try:
+            result = await extract_to(safe_join(directory, name), staging, name, current.mime)
+            async with self.lock(resource_id):
+                resource = self.files.read(resource_id)
+                attachment = next((a for a in resource.attachments if a.path == name), None)
+                if attachment is None or attachment.sha256 != current.sha256:
+                    return  # deleted or replaced meanwhile
+                content = staging / "content.md"
+                if content.exists():
+                    text_dir = directory / ATTACHMENT_TEXT_DIR
+                    text_dir.mkdir(exist_ok=True)
+                    os.replace(content, text_dir / f"{name}.md")
+                    attachment.text_path = f"{ATTACHMENT_TEXT_DIR}/{name}.md"
+                else:
+                    attachment.text_path = None
+                attachment.extraction = result.meta.get("extraction")
+                if (
+                    attachment.text_path
+                    and resource.title_source != TitleSource.HUMAN
+                    and (resource.title_source == TitleSource.URL or _weak(resource))
+                ):
+                    # The page gave no real title (a bot check says "Reddit"): a PDF saved
+                    # from the browser carries the page's title, in metadata or filename.
+                    title = result.title if result.title and _useful_title(result.title) else None
+                    resource.title = (title or _title_from_filename(name)).strip()[:300]
+                    resource.title_source = TitleSource.EXTRACTED
+                resource.updated_at = utcnow()
+                self.files.write(resource)
+                chunks, role = self._chunks_for(resource)
+                self.index.upsert(resource, chunks, role or "")
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
 
     # ------------------------------------------------------- export / import (ADR-0015)
 
@@ -996,8 +1088,19 @@ class Library:
             raise InvalidInput(f"blocked by SSRF guard: {exc}") from exc
 
     def _chunks_for(self, resource: Resource) -> tuple[list[Chunk], str | None]:
-        text, role = self.text(resource)
-        return (chunk_markdown(text) if text.strip() else []), role
+        """Chunks of the main text, then of every attachment's extracted text."""
+        text, role = self._main_text(resource)
+        chunks = chunk_markdown(text) if text.strip() else []
+        for attachment in resource.attachments:
+            extra = self._read_attachment_text(resource.id, attachment)
+            if not extra or not extra.strip():
+                continue
+            for c in chunk_markdown(extra):
+                heading = attachment.path
+                if c.heading_path:
+                    heading = f"{heading} > {c.heading_path}"
+                chunks.append(Chunk(len(chunks), heading, c.text, role="attachment"))
+        return chunks, role
 
     def startup(self) -> int:
         """Reset interrupted jobs and wipe staging. Returns how many jobs were reset."""
@@ -1006,6 +1109,14 @@ class Library:
 
     def stats(self) -> dict[str, Any]:
         return {"by_status": self.index.counts(), "now": iso(utcnow())}
+
+
+def _weak(resource: Resource) -> bool:
+    """The fetched content is missing or too thin to stand for the resource."""
+    return resource.kind != Kind.NOTE and (
+        resource.meta.get("extraction") in ("poor", "failed", "unsupported")
+        or not resource.current_snapshot
+    )
 
 
 def _is_repository(url: str) -> bool:
