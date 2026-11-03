@@ -104,7 +104,9 @@ def create_app(
     api.mount("/static", StaticFiles(directory=static), name="static")
 
     max_body = (settings.attachments.max_mb + 25) * 1_000_000  # uploads plus form overhead
-    guarded = RequestGuard(api, tokens, settings.http.session_secret or "", max_body)
+    # Library import parts are much larger than attachments; only that route takes them.
+    large = {"/settings/import": (settings.export.max_upload_mb + 25) * 1_000_000}
+    guarded = RequestGuard(api, tokens, settings.http.session_secret or "", max_body, large)
     return Root(guarded, McpAuth(mcp_app, tokens))
 
 
@@ -124,11 +126,19 @@ class RequestGuard:
     check scopes and CSRF themselves; this only rejects requests with no valid credential.
     """
 
-    def __init__(self, app: ASGIApp, tokens: TokenStore, secret: str, max_body: int) -> None:
+    def __init__(
+        self,
+        app: ASGIApp,
+        tokens: TokenStore,
+        secret: str,
+        max_body: int,
+        large_paths: dict[str, int] | None = None,
+    ) -> None:
         self.app = app
         self.tokens = tokens
         self.secret = secret
         self.max_body = max_body
+        self.large_paths = large_paths or {}
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http" or scope["method"] not in _WRITE_METHODS:
@@ -136,8 +146,9 @@ class RequestGuard:
             return
         headers = {k.decode().lower(): v.decode(errors="replace") for k, v in scope["headers"]}
         path: str = scope["path"]
+        max_body = self.large_paths.get(path, self.max_body)
         length = headers.get("content-length", "")
-        if length.isdigit() and int(length) > self.max_body:
+        if length.isdigit() and int(length) > max_body:
             await _plain(send, 413, "request body too large")
             return
         if path not in _PUBLIC_POSTS and not self._authenticated(path, headers):
@@ -151,7 +162,7 @@ class RequestGuard:
             message = await receive()
             if message["type"] == "http.request":
                 received += len(message.get("body", b""))
-                if received > self.max_body:
+                if received > max_body:
                     raise RequestTooLarge  # chunked bodies without a Content-Length
             return message
 

@@ -24,6 +24,8 @@
 | Hostile files: zip bomb, XML entities, corrupt PDF, binary-as-text | `TestExtract` |
 | Bulk import from text and bookmarks exports | `TestImport`, `TestDocumentsAndImport`; by hand |
 | Activity dashboard: 30-day capture chart, latest captures, live job table | by hand in Chrome |
+| Attachments: drop several files at once, links through a modal | `test_attach_several_files_and_a_link` |
+| Library export/import in independent ~2 GB tar parts (ADR-0015) | `test_transfer.py` (round trip, any order, duplicates, hostile tars, UI) |
 
 ## Known limits
 
@@ -36,6 +38,8 @@
 - No OCR: scanned PDFs are kept and flagged `extraction: poor`. No text from attachments
   (they are stored and downloadable, not indexed).
 - MCP cannot upload files (agents pass a URL to `ingest_url` instead).
+- Export/import: UI and CLI only (no REST/MCP); an export is consistent per resource, not
+  for the whole library at one instant; import never merges edits made on both sides.
 
 ## Next steps
 

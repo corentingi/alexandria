@@ -1,0 +1,49 @@
+{% from "_macros.html" import icon %}
+<div id="transfers"{% if busy %} hx-get="/settings/transfers" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
+  {% if exports or importing or imports %}
+  <p class="section-title transfer-title">History</p>
+  <ul class="transfer-list">
+    {% for e in exports %}
+    <li>
+      <div class="transfer-row">
+        <span class="transfer-icon">{{ icon("download", 15) }}</span>
+        <div class="grow">
+          <b>Export</b> <span class="muted small" title="{{ e.created_at }}">{{ e.created_at | date }} · {{ e.created_at | ago }}</span>
+          {% if e.status == "done" %}<span class="badge ok">done</span>
+          {% elif e.status == "failed" %}<span class="badge bad">failed</span>
+          {% else %}<span class="badge warn"><span class="dot pulse"></span>running</span>{% endif %}
+          <div class="small muted">{{ e.resources }} resource{{ "s" if e.resources != 1 }}{% if e.status == "done" %} · {{ e.size | filesize }} · {{ e.parts | length }} part{{ "s" if e.parts | length != 1 }}{% elif e.status == "running" %} so far{% endif %}</div>
+          {% if e.error %}<div class="err small">{{ e.error }}</div>{% endif %}
+        </div>
+        {% if e.status != "running" %}<form method="post" action="/settings/exports/{{ e.id }}/delete"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="icon-btn" type="submit" title="Delete this export" aria-label="Delete the export of {{ e.created_at | date }}" data-confirm="Delete this export's files from the server ({{ e.size | filesize }})?">{{ icon("trash", 15) }}</button></form>{% endif %}
+      </div>
+      {% if e.status == "done" %}
+      <div class="part-list">{% for part in e.parts %}<a class="part" href="/settings/exports/{{ e.id }}/{{ part.name }}" download title="{{ part.resources }} resource{{ 's' if part.resources != 1 }}">{{ icon("download", 13) }}<span>Part {{ loop.index }}</span><span class="muted">{{ part.size | filesize }}</span></a>{% endfor %}</div>
+      {% endif %}
+    </li>
+    {% endfor %}
+    {% for j in importing %}
+    <li><div class="transfer-row">
+      <span class="transfer-icon">{{ icon("upload", 15) }}</span>
+      <div class="grow"><b>Import</b> <span class="muted small">{{ j.payload.get("name") }}</span> <span class="badge warn"><span class="dot pulse"></span>{{ "importing" if j.status == "running" else "queued" }}</span></div>
+    </div></li>
+    {% endfor %}
+    {% for r in imports %}
+    <li><div class="transfer-row">
+      <span class="transfer-icon">{{ icon("upload", 15) }}</span>
+      <div class="grow">
+        <b>Import</b> <span class="muted small" title="{{ r.finished_at }}">{{ r.file }} · {{ r.finished_at | ago }}</span>
+        <div class="small">
+          <span class="badge {{ 'ok' if r.imported }}">{{ r.imported | length }} imported</span>
+          {% if r.existing %}<span class="badge">{{ r.existing | length }} already here</span>{% endif %}
+          {% if r.duplicates %}<span class="badge">{{ r.duplicates | length }} duplicate link{{ "s" if r.duplicates | length != 1 }}</span>{% endif %}
+          {% if r.errors %}<span class="badge bad">{{ r.errors | length }} problem{{ "s" if r.errors | length != 1 }}</span>{% endif %}
+          {% if r.part %}<span class="muted">part {{ r.part }} of the export of {{ r.export_id | snapdate }}</span>{% endif %}
+        </div>
+        {% if r.errors %}<details class="small muted"><summary>Show problems</summary><ul>{% for e in r.errors[:20] %}<li>{{ e }}</li>{% endfor %}</ul>{% if r.errors | length > 20 %}<p>… and {{ r.errors | length - 20 }} more.</p>{% endif %}</details>{% endif %}
+      </div>
+    </div></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</div>

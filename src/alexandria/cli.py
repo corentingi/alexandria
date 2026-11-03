@@ -24,6 +24,8 @@ from alexandria.views import highlight
 app = typer.Typer(help="Alexandria: a personal knowledge base for humans and agents.")
 token_app = typer.Typer(help="Manage API tokens.")
 app.add_typer(token_app, name="token")
+library_app = typer.Typer(help="Export or import the whole library as tar parts.")
+app.add_typer(library_app, name="library")
 
 
 def _settings() -> Settings:
@@ -284,3 +286,49 @@ def token_revoke(name: str) -> None:
 
 if __name__ == "__main__":
     app()
+
+
+@library_app.command("export")
+def library_export(
+    out: Annotated[
+        Path | None, typer.Option(help="Directory for the parts (default: <data>/exports/<id>)")
+    ] = None,
+) -> None:
+    """Export every resource into tar parts of about export.part_mb (2000 MB) each."""
+    from alexandria.models import utcnow
+    from alexandria.storage.files import SNAPSHOT_FORMAT
+
+    library = _library()
+    export_id = utcnow().strftime(SNAPSHOT_FORMAT)
+    directory = out / export_id if out else None
+    info = asyncio.run(library.export_library(export_id, directory))
+    where = directory or library.settings.exports_dir / export_id
+    for part in info.parts:
+        typer.echo(f"{where / part.name}  {part.size / 1e6:.1f} MB  {part.resources} resources")
+    typer.echo(f"Exported {info.resources} resource(s) in {len(info.parts)} part(s).")
+
+
+@library_app.command("import")
+def library_import(
+    parts: Annotated[list[Path], typer.Argument(help="Export parts (.tar), in any order")],
+) -> None:
+    """Import export parts. Resources already present (same id or link) are skipped."""
+    library = _library()
+    failed = False
+    for path in parts:
+        if not path.is_file():
+            _fail(f"{path}: no such file")
+        try:
+            report = asyncio.run(library.import_library(path))
+        except InvalidInput as exc:
+            typer.secho(str(exc), fg="red", err=True)
+            failed = True
+            continue
+        for error in report.errors:
+            typer.secho(f"{path.name}: {error}", fg="yellow", err=True)
+        typer.echo(
+            f"{path.name}: {len(report.imported)} imported, {len(report.existing)} already here, "
+            f"{len(report.duplicates)} duplicate links, {len(report.errors)} problem(s)"
+        )
+    if failed:
+        raise typer.Exit(1)

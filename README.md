@@ -62,6 +62,15 @@ tar -xzf repository.git.tar.gz && git clone repository.git my-checkout
 `alexandria backup <dir>` also copies the database with `VACUUM INTO`; or rebuild it with
 `alexandria reindex` (only the job queue is lost).
 
+## Move a library
+
+Settings → *Export & import the library* writes the whole library as plain `.tar` parts
+of about 2 GB each (`export.part_mb`). Each part stands alone: import them in any order,
+here or on another installation. Anything already present is skipped, never overwritten.
+From a shell: `alexandria library export [--out DIR]` and
+`alexandria library import <parts…>`. See
+[ADR-0015](docs/adrs/0015-library-export-and-import.md).
+
 ## Configuration
 
 Environment variables `ALEXANDRIA_*` (nested with `__`, e.g. `ALEXANDRIA_GITHUB__TOKEN`)

@@ -747,8 +747,81 @@ async def settings_page(request: Request, c: Ctx, who: User) -> Response:
         f"javascript:location.href='{base}/add?url='+encodeURIComponent(location.href)"
         "+'&title='+encodeURIComponent(document.title)"
     )
-    tokens = c.tokens.list() if who.can(ScopeLevel.ADMIN) else []
-    return render(request, "settings.html", bookmarklet=bookmarklet, base=base, tokens=tokens)
+    admin = who.can(ScopeLevel.ADMIN)
+    tokens = c.tokens.list() if admin else []
+    transfers = _transfers(c) if admin else {}
+    return render(
+        request, "settings.html", bookmarklet=bookmarklet, base=base, tokens=tokens, **transfers
+    )
+
+
+def _transfers(c: AppContext) -> dict[str, Any]:
+    library = c.library
+    active = [j for j in library.index.jobs("queued", limit=500) + library.index.jobs(
+        "running", limit=500) if j.type in ("export", "import_library")]  # fmt: skip
+    exports = library.exports()
+    return {
+        "exports": exports,
+        "imports": library.import_reports(),
+        "importing": [j for j in active if j.type == "import_library"],
+        "busy": bool(active) or any(e.status == "running" for e in exports),
+        "busy_export": any(j.type == "export" for j in active),
+        "part_mb": c.settings.export.part_mb,
+    }
+
+
+@router.get("/settings/transfers")
+async def transfers(request: Request, c: Ctx, who: User) -> Response:
+    need(who, ScopeLevel.ADMIN)
+    return render(request, "_transfers.html", **_transfers(c))
+
+
+@router.post("/settings/export", dependencies=[Csrf])
+async def start_export(c: Ctx, who: User) -> Response:
+    need(who, ScopeLevel.ADMIN)
+    try:
+        c.library.start_export()
+    except InvalidInput as exc:
+        return back("/settings#library", error=str(exc))
+    c.enqueued()
+    return back("/settings#library", notice="Export started.")
+
+
+@router.get("/settings/exports/{export_id}/{name}")
+async def download_export(c: Ctx, who: User, export_id: str, name: str) -> Response:
+    need(who, ScopeLevel.ADMIN)
+    try:
+        path = c.library.export_part(export_id, name)
+    except NotFound as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return FileResponse(path, media_type="application/x-tar", filename=name)
+
+
+@router.post("/settings/exports/{export_id}/delete", dependencies=[Csrf])
+async def delete_export(c: Ctx, who: User, export_id: str) -> Response:
+    need(who, ScopeLevel.ADMIN)
+    try:
+        c.library.delete_export(export_id)
+    except (InvalidInput, NotFound) as exc:
+        return back("/settings#library", error=str(exc))
+    return back("/settings#library", notice="Export deleted.")
+
+
+@router.post("/settings/import", dependencies=[Csrf])
+async def import_library(c: Ctx, who: User, file: list[UploadFile] | None = None) -> Response:
+    need(who, ScopeLevel.ADMIN)
+    uploads = [f for f in file or [] if f.filename]
+    if not uploads:
+        return back("/settings#library", error="Choose one or more export parts (.tar).")
+    try:
+        for upload in uploads:
+            assert upload.filename
+            await c.library.receive_import(upload.filename, _chunks(upload))
+    except InvalidInput as exc:
+        return back("/settings#library", error=str(exc))
+    c.enqueued()
+    n = len(uploads)
+    return back("/settings#library", notice=f"Importing {n} file{'s' if n > 1 else ''}…")
 
 
 @router.post("/reindex", dependencies=[Csrf])

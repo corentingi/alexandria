@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import icon %}
 {% block title %}Settings{% endblock %}
 {% block content %}
 <div class="page-head"><div><h1>Settings</h1><p>Capture from the browser, connect agents, manage the index.</p></div></div>
@@ -27,6 +28,33 @@
     <thead><tr><th>Name</th><th>Scope</th><th>Created</th></tr></thead>
     <tbody>{% for t in tokens %}<tr><td><b>{{ t.name }}</b>{% if t.name == user.name %} <span class="badge accent">you</span>{% endif %}</td><td>{{ t.scope }}</td><td class="muted">{{ t.created_at | ago }}</td></tr>{% endfor %}</tbody>
   </table></div>
+</section>
+
+<section class="card pad" id="library">
+  <h2>Export &amp; import</h2>
+  <p class="muted">Move the whole library to another installation, or keep an offline copy.</p>
+  <div class="transfer-grid">
+    <div class="transfer-panel">
+      <div class="panel-head">{{ icon("download", 18) }}<h3>Export</h3></div>
+      <p class="small">Every resource with its snapshots, git archives, documents, attachments and notes, as plain <code>.tar</code> parts of about {{ (part_mb / 1000) | round(1) }} GB. Tokens and settings stay here.</p>
+      <form method="post" action="/settings/export"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn primary" type="submit" {{ "disabled" if busy_export }}>{{ "Export running…" if busy_export else "Export library" }}</button></form>
+    </div>
+    <div class="transfer-panel">
+      <div class="panel-head">{{ icon("upload", 18) }}<h3>Import</h3></div>
+      <p class="small">Drop one or more parts, in any order. Anything already in this library is skipped, never overwritten.</p>
+      <form method="post" action="/settings/import" enctype="multipart/form-data" data-autosubmit>
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <label class="dropzone compact">
+          <b>Drop <code>.tar</code> parts here, or click to choose</b>
+          <span class="files-chosen"></span>
+          <input type="file" name="file" multiple required accept=".tar,application/x-tar" aria-label="Export parts">
+        </label>
+        <noscript><button class="btn sm" type="submit">Import</button></noscript>
+      </form>
+    </div>
+  </div>
+  {% include "_transfers.html" %}
+  <p class="small muted cli-hint">Very large library? The command line skips the browser upload: <code>alexandria library export</code>, <code>alexandria library import &lt;parts…&gt;</code>.</p>
 </section>
 
 <section class="card pad">

@@ -324,6 +324,36 @@ a.stat:hover { text-decoration: none; border-color: var(--accent); transform: tr
 .dropzone .files-chosen { font-size: .85rem; color: var(--ink); font-weight: 550; }
 .dropzone.compact { padding: 18px 14px; gap: 4px; margin-bottom: 10px; font-size: .9rem; }
 form.sending .dropzone { opacity: .6; pointer-events: none; }
+/* ---- export & import ----------------------------------------------------- */
+.transfer-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
+@media (max-width: 820px) { .transfer-grid { grid-template-columns: 1fr; } }
+.transfer-panel {
+  display: flex; flex-direction: column; gap: 10px; padding: 16px; border: 1px solid var(--line);
+  border-radius: var(--radius); background: var(--surface-2);
+}
+.transfer-panel p { margin: 0; flex: 1; }
+.transfer-panel form { margin: 0; }
+.transfer-panel .dropzone { margin: 0; background: var(--surface); padding: 16px 12px; }
+.panel-head { display: flex; gap: 8px; align-items: center; color: var(--accent); }
+.panel-head h3 { margin: 0; font-size: 1rem; color: var(--ink); }
+.transfer-title { margin-top: 22px; }
+.transfer-list { list-style: none; padding: 0; margin: 0; border: 1px solid var(--line); border-radius: var(--radius); }
+.transfer-list > li { padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.transfer-list > li:last-child { border-bottom: 0; }
+.transfer-row { display: flex; gap: 10px; align-items: flex-start; }
+.transfer-row .badge { margin-left: 4px; }
+.transfer-row .small .badge:first-child { margin-left: 0; }
+.transfer-icon {
+  flex: none; display: inline-flex; padding: 6px; border-radius: 8px;
+  background: var(--accent-soft); color: var(--accent);
+}
+.part-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 0 38px; }
+.part {
+  display: inline-flex; gap: 6px; align-items: center; padding: 5px 10px; font-size: .85rem;
+  border: 1px solid var(--line-2); border-radius: 999px; color: var(--ink); background: var(--surface);
+}
+.part:hover { border-color: var(--accent); text-decoration: none; }
+.cli-hint { margin: 16px 0 0; }
 .formats { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; margin-top: 4px; }
 
 /* ---- chart -------------------------------------------------------------------- */

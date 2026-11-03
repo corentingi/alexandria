@@ -54,6 +54,14 @@ class AttachmentSettings(BaseModel):
     max_mb: int = 500
 
 
+class ExportSettings(BaseModel):
+    # Library exports are split into independent tar parts of about this size.
+    part_mb: int = 2000
+    # Largest export part accepted by an upload in the UI (a single resource bigger than
+    # part_mb gets a part of its own, so this is larger).
+    max_upload_mb: int = 4096
+
+
 class WorkerSettings(BaseModel):
     concurrency: int = 2
     max_attempts: int = 3
@@ -80,6 +88,7 @@ class Settings(BaseSettings):
     github: GithubSettings = Field(default_factory=GithubSettings)
     attachments: AttachmentSettings = Field(default_factory=AttachmentSettings)
     worker: WorkerSettings = Field(default_factory=WorkerSettings)
+    export: ExportSettings = Field(default_factory=ExportSettings)
     security: SecuritySettings = Field(default_factory=SecuritySettings)
 
     @classmethod
@@ -104,6 +113,14 @@ class Settings(BaseSettings):
     @property
     def tmp_dir(self) -> Path:
         return self.data_dir / "tmp"
+
+    @property
+    def exports_dir(self) -> Path:
+        return self.data_dir / "exports"
+
+    @property
+    def imports_dir(self) -> Path:
+        return self.data_dir / "imports"
 
     @property
     def tokens_path(self) -> Path:

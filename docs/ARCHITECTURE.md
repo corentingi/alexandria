@@ -67,6 +67,7 @@ See DESIGN.md §5. Additions: `tokens.yaml` (ADR-0003), `session_secret`, and th
 | `fetchers/` | `base.download` (guarded streaming GET), article, git, document, attachment |
 | `library.py` | All operations + job handlers |
 | `jobs.py` | Worker loop, retries |
+| `transfer.py` | Export parts (tar writer, size split) and safe unpacking for import |
 | `auth.py` | Token store and scopes |
 | `api/`, `mcp_server.py`, `ui/`, `cli.py` | Interfaces |
 | `app.py` | ASGI composition, bootstrap token |

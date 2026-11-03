@@ -19,7 +19,8 @@ RUN apt-get update \
 COPY --from=build /app /app
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
-    ALEXANDRIA_DATA_DIR=/data
+    ALEXANDRIA_DATA_DIR=/data \
+    TMPDIR=/data/tmp
 USER alexandria
 VOLUME /data
 EXPOSE 8080

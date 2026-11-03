@@ -4,9 +4,14 @@ import socket
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 
+import httpx
 import pytest
+import respx
+from starlette.testclient import TestClient
 
 from alexandria import security
+from alexandria.app import create_app
+from alexandria.auth import ScopeLevel, TokenStore
 from alexandria.config import Settings, load_settings
 from alexandria.fetchers.article import ArticleFetcher
 from alexandria.fetchers.git_repo import GitRepoFetcher
@@ -14,6 +19,7 @@ from alexandria.jobs import Worker
 from alexandria.library import Library
 from alexandria.models import Kind
 
+URL = "https://blog.example.com/posts/on-building-libraries"
 PUBLIC_IP = "93.184.216.34"
 # Hostnames the fake resolver maps to private addresses (to exercise the SSRF guard).
 PRIVATE_HOSTS = {"intranet.example": "192.168.1.10", "rebind.example": "127.0.0.1"}
@@ -85,3 +91,23 @@ Papyrus scrolls were copied by hand; we copy with HTTP requests and Markdown.</p
 long way before anyone needs embeddings or vector databases for a personal collection.</p>
 </article><footer>Copyright</footer></body></html>
 """
+
+
+@pytest.fixture
+def tokens(settings: Settings) -> dict[str, str]:
+    store = TokenStore(settings.tokens_path)
+    return {level.label: store.create(level.label, level) for level in ScopeLevel}
+
+
+@pytest.fixture
+def client(settings: Settings, tokens: dict[str, str]) -> Iterator[TestClient]:
+    settings.worker.poll_interval_s = 0.05
+    with respx.mock(assert_all_called=False) as router:
+        router.route(host="testserver").pass_through()
+        router.get(URL).mock(
+            return_value=httpx.Response(
+                200, text=ARTICLE_HTML, headers={"content-type": "text/html"}
+            )
+        )
+        with TestClient(create_app(settings)) as c:
+            yield c

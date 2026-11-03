@@ -7,11 +7,13 @@ per-resource asyncio lock serializes edits to one resource (API PATCH vs. the wo
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import os
 import re
 import shutil
 from collections.abc import AsyncIterator, Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -40,8 +42,24 @@ from alexandria.models import (
     utcnow,
 )
 from alexandria.security import BlockedURL, check_url, safe_join, sanitize_filename, unique_name
-from alexandria.storage.files import FileStore, InvalidResourceFile, guess_mime, sha256_file
+from alexandria.storage.files import (
+    RESOURCE_FILE,
+    SNAPSHOT_FORMAT,
+    FileStore,
+    InvalidResourceFile,
+    guess_mime,
+    parse_resource,
+    sha256_file,
+)
 from alexandria.storage.index import Index, Job, SearchFilters, SearchHit
+from alexandria.transfer import (
+    EXPORT_ID_RE,
+    ArchiveError,
+    ExportInfo,
+    ExportWriter,
+    LibraryImportReport,
+    unpack,
+)
 from alexandria.urls import InvalidURL, detect
 
 log = logging.getLogger(__name__)
@@ -552,6 +570,8 @@ class Library:
             "fetch": self._job_fetch,
             "attach_url": self._job_attach_url,
             "reindex_resource": self._job_reindex,
+            "export": self._job_export,
+            "import_library": self._job_import_library,
         }
 
     def _enqueue(
@@ -735,6 +755,206 @@ class Library:
             self.index.upsert(resource, None)
         return attachment
 
+    # ------------------------------------------------------- export / import (ADR-0015)
+
+    def exports(self) -> list[ExportInfo]:
+        root = self.settings.exports_dir
+        if not root.is_dir():
+            return []
+        found = []
+        for entry in sorted(root.iterdir(), reverse=True):
+            if entry.is_dir() and EXPORT_ID_RE.match(entry.name):
+                info = ExportInfo.load(entry)
+                if info is not None:
+                    found.append(info)
+        return found
+
+    def _transfer_jobs(self, job_type: str) -> list[Job]:
+        active = self.index.jobs("queued", limit=1000) + self.index.jobs("running", limit=1000)
+        return [j for j in active if j.type == job_type]
+
+    def start_export(self) -> ExportInfo:
+        """Queue a full export into ``<data>/exports/<id>/``. One at a time."""
+        if self._transfer_jobs("export"):
+            raise InvalidInput("an export is already queued or running")
+        export_id = utcnow().strftime(SNAPSHOT_FORMAT)
+        directory = self.settings.exports_dir / export_id
+        if directory.exists():
+            raise InvalidInput("an export was started this second; try again")
+        directory.mkdir(parents=True)
+        info = ExportInfo(id=export_id, part_mb=self.settings.export.part_mb)
+        info.save(directory)
+        self._enqueue("export", None, {"export_id": export_id})
+        return info
+
+    async def export_library(self, export_id: str, directory: Path | None = None) -> ExportInfo:
+        """Write every resource into tar parts. Each resource is copied under its lock."""
+        if not EXPORT_ID_RE.match(export_id):
+            raise InvalidInput(f"not an export id: {export_id!r}")
+        directory = directory or self.settings.exports_dir / export_id
+        directory.mkdir(parents=True, exist_ok=True)
+        for old in directory.glob(f"alexandria-{export_id}-*.tar"):  # a retried export
+            old.unlink()
+        part_mb = self.settings.export.part_mb
+        info = ExportInfo(id=export_id, part_mb=part_mb)
+        info.save(directory)
+        writer = ExportWriter(directory, info, part_mb * 1_000_000)
+        try:
+            for resource_id in list(self.files.resource_ids()):
+                async with self.lock(resource_id):
+                    if self.files.exists(resource_id):
+                        resource_dir = self.files.resource_dir(resource_id)
+                        await asyncio.to_thread(writer.add_resource, resource_dir)
+            await asyncio.to_thread(writer.close)
+        except BaseException as exc:
+            writer.abort()
+            info.status, info.error = "failed", str(exc) or type(exc).__name__
+            info.finished_at = iso(utcnow())
+            info.save(directory)
+            raise
+        info.status, info.finished_at = "done", iso(utcnow())
+        info.save(directory)
+        return info
+
+    def export_part(self, export_id: str, name: str) -> Path:
+        info = self._export(export_id)
+        if name not in {p.name for p in info.parts} or info.status != "done":
+            raise NotFound(f"no part {name} in export {export_id}")
+        return self.settings.exports_dir / export_id / name
+
+    def delete_export(self, export_id: str) -> None:
+        info = self._export(export_id)
+        if info.status == "running" and self._transfer_jobs("export"):
+            raise InvalidInput("this export is still running")
+        shutil.rmtree(self.settings.exports_dir / export_id)
+
+    def _export(self, export_id: str) -> ExportInfo:
+        info = None
+        if EXPORT_ID_RE.match(export_id):
+            info = ExportInfo.load(self.settings.exports_dir / export_id)
+        if info is None:
+            raise NotFound(f"no export {export_id}")
+        return info
+
+    async def receive_import(self, filename: str, chunks: AsyncIterator[bytes]) -> str:
+        """Store an uploaded export part in ``<data>/imports/`` and queue its import."""
+        root = self.settings.imports_dir
+        root.mkdir(parents=True, exist_ok=True)
+        name = f"{new_id()}-{sanitize_filename(filename, 'export.tar')}"
+        target = root / name
+        limit = self.settings.export.max_upload_mb * 1_000_000
+        size = 0
+        try:
+            with target.open("wb") as fh:
+                async for block in chunks:
+                    size += len(block)
+                    if size > limit:
+                        raise InvalidInput(f"file exceeds {self.settings.export.max_upload_mb} MB")
+                    fh.write(block)
+        except BaseException:
+            target.unlink(missing_ok=True)
+            raise
+        if not size:
+            target.unlink()
+            raise InvalidInput(f"{filename} is empty")
+        return self._enqueue("import_library", None, {"file": name, "name": filename})
+
+    def import_reports(self, limit: int = 10) -> list[dict[str, Any]]:
+        root = self.settings.imports_dir
+        if not root.is_dir():
+            return []
+        reports = []
+        for path in sorted(root.glob("*.report.json"), reverse=True)[:limit]:
+            try:
+                reports.append(json.loads(path.read_text(encoding="utf-8")))
+            except OSError, ValueError:
+                continue
+        return reports
+
+    async def import_library(self, archive: Path, name: str | None = None) -> LibraryImportReport:
+        """Add every resource of one export part. Resources already here are left alone."""
+        report = LibraryImportReport(file=name or archive.name)
+        staging = self.files.new_staging_dir(f"import-{new_id()}")
+        try:
+            try:
+                manifest, ids, problems = await asyncio.to_thread(unpack, archive, staging)
+            except ArchiveError as exc:
+                raise InvalidInput(f"{report.file}: {exc}") from exc
+            report.export_id, report.part = manifest.get("export_id"), manifest.get("part")
+            report.errors.extend(problems)
+            for resource_id in ids:
+                try:
+                    await self._import_resource(resource_id, staging / resource_id, report)
+                except (InvalidResourceFile, OSError, ValueError) as exc:
+                    report.errors.append(f"{resource_id}: {exc}")
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
+        report.finished_at = iso(utcnow())
+        return report
+
+    async def _import_resource(
+        self, resource_id: str, source: Path, report: LibraryImportReport
+    ) -> None:
+        resource_md = source / RESOURCE_FILE
+        if not resource_md.is_file():
+            report.errors.append(f"{resource_id}: no {RESOURCE_FILE}, skipped")
+            return
+        resource = parse_resource(
+            resource_md.read_text(encoding="utf-8"), source=f"{resource_id}/{RESOURCE_FILE}"
+        )
+        if resource.id != resource_id:
+            report.errors.append(f"{resource_id}: id in {RESOURCE_FILE} is {resource.id}")
+            return
+        refetch = False
+        async with self.lock(resource_id):
+            if self.files.exists(resource_id):
+                report.existing.append(resource_id)
+                return
+            url = resource.canonical_url
+            other = self.index.find_by_canonical_url(url) if url else None
+            if other and other != resource_id:
+                report.duplicates.append(f"{resource_id} ({url}, already {other})")
+                return
+            changed = False
+            if self.index.slug_taken(resource.slug, resource_id):
+                resource.slug = unique_slug(resource.slug, self.index.slug_taken)
+                changed = True
+            if resource.fetch_status in (FetchStatus.PENDING, FetchStatus.FETCHING):
+                # Its queued fetch stayed in the other installation's database.
+                resource.fetch_status, refetch, changed = FetchStatus.PENDING, True, True
+            target = self.files.resource_dir(resource_id)
+            if target.exists():  # a folder without resource.md: debris
+                shutil.rmtree(target)
+            os.replace(source, target)
+            if changed:
+                self.files.write(resource)
+            chunks, role = self._chunks_for(resource)
+            self.index.upsert(resource, chunks, role or "")
+        if refetch and resource.kind != Kind.NOTE:
+            self._enqueue("fetch", resource_id)
+        report.imported.append(resource_id)
+
+    async def _job_export(self, job: Job) -> None:
+        await self.export_library(str(job.payload["export_id"]))
+
+    async def _job_import_library(self, job: Job) -> None:
+        name = sanitize_filename(str(job.payload.get("file", "")))
+        archive = self.settings.imports_dir / name
+        if not archive.is_file():
+            raise InvalidInput(f"uploaded file {name} is gone")
+        report_path = self.settings.imports_dir / f"{name}.report.json"
+        try:
+            report = await self.import_library(archive, str(job.payload.get("name") or name))
+        except InvalidInput as exc:
+            failed = LibraryImportReport(file=str(job.payload.get("name") or name))
+            failed.errors.append(str(exc))
+            failed.finished_at = iso(utcnow())
+            _write_json(report_path, failed)
+            archive.unlink(missing_ok=True)
+            raise
+        _write_json(report_path, report)
+        archive.unlink(missing_ok=True)
+
     # ---------------------------------------------------------------- helpers
 
     async def _guard(self, url: str) -> None:
@@ -755,6 +975,12 @@ class Library:
 
     def stats(self) -> dict[str, Any]:
         return {"by_status": self.index.counts(), "now": iso(utcnow())}
+
+
+def _write_json(path: Path, report: LibraryImportReport) -> None:
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(asdict(report), indent=2), encoding="utf-8")
+    os.replace(tmp, path)
 
 
 def _scope(scope: Scope | None, project: str | None) -> tuple[Scope, str | None]:

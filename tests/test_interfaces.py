@@ -5,41 +5,15 @@ from __future__ import annotations
 import json
 import re
 import time
-from collections.abc import Iterator
 from typing import Any
 from urllib.parse import unquote_plus
 
 import httpx
-import pytest
-import respx
 from starlette.testclient import TestClient
 
-from alexandria.app import create_app
 from alexandria.auth import ScopeLevel, TokenStore
 from alexandria.config import Settings
-from tests.conftest import ARTICLE_HTML
-
-URL = "https://blog.example.com/posts/on-building-libraries"
-
-
-@pytest.fixture
-def tokens(settings: Settings) -> dict[str, str]:
-    store = TokenStore(settings.tokens_path)
-    return {level.label: store.create(level.label, level) for level in ScopeLevel}
-
-
-@pytest.fixture
-def client(settings: Settings, tokens: dict[str, str]) -> Iterator[TestClient]:
-    settings.worker.poll_interval_s = 0.05
-    with respx.mock(assert_all_called=False) as router:
-        router.route(host="testserver").pass_through()
-        router.get(URL).mock(
-            return_value=httpx.Response(
-                200, text=ARTICLE_HTML, headers={"content-type": "text/html"}
-            )
-        )
-        with TestClient(create_app(settings)) as c:
-            yield c
+from tests.conftest import URL
 
 
 def auth(token: str) -> dict[str, str]:

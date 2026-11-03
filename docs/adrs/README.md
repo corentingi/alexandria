@@ -20,3 +20,4 @@ mark the old one superseded.
 | [0012](0012-documents-and-text-extraction.md) | Documents: original in `source/`, text extracted into snapshots | Accepted |
 | [0013](0013-bulk-link-import.md) | Bulk import of links from text or a bookmarks export | Accepted |
 | [0014](0014-hardening-after-review.md) | Hardening after the first review | Accepted |
+| [0015](0015-library-export-and-import.md) | Library export and import as independent ~2 GB tar parts | Accepted |
