@@ -31,7 +31,7 @@
       <span class="muted">v{{ version }}</span>
     </div>{% endif %}
   </aside>
-  <main class="main"><div class="wrap">
+  <main class="main"><div class="wrap {% block wrap %}{% endblock %}">
     {%- if request.query_params.get("notice") %}<div class="notice ok" role="status">{{ request.query_params.get("notice") }}</div>{% endif %}
     {%- if request.query_params.get("error") %}<div class="notice bad" role="alert">{{ request.query_params.get("error") }}</div>{% endif %}
     {% block content %}{% endblock %}

@@ -177,6 +177,11 @@ async def delete_resource(ref: str, c: Ctx, _: Admin) -> None:
     await c.library.delete(ref)
 
 
+@router.delete("/resources/{ref}/attachments/{path}", status_code=204)
+async def delete_attachment(ref: str, path: str, c: Ctx, _: Admin) -> None:
+    await c.library.delete_attachment(ref, path)
+
+
 @router.post("/resources/{ref}/refetch", status_code=202)
 async def refetch(ref: str, c: Ctx, _: Writer) -> dict[str, Any]:
     job_id = await c.library.refetch(ref)

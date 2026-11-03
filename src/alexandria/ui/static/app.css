@@ -108,6 +108,7 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 1.5rem 0; }
 .side .foot form { display: inline; }
 .main { min-width: 0; padding: 32px clamp(16px, 4vw, 48px) 64px; }
 .wrap { max-width: 980px; margin: 0 auto; }
+.wrap.wide { max-width: 1320px; }
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
 .page-head p { margin: 0; color: var(--ink-2); }
 
@@ -225,7 +226,7 @@ kbd { font: 600 .72rem var(--mono); padding: 2px 6px; border-radius: 4px; border
 .r-head { display: flex; gap: 16px; align-items: flex-start; margin-bottom: 18px; }
 .r-head .kind { width: 46px; height: 46px; border-radius: 12px; }
 .r-head h1 { margin-bottom: 4px; word-break: break-word; }
-.r-layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; align-items: start; }
+.r-layout { display: grid; grid-template-columns: minmax(0, 1fr) clamp(320px, 34%, 440px); gap: 24px; align-items: start; }
 @media (max-width: 1000px) { .r-layout { grid-template-columns: 1fr; } }
 .why-box { border-left: 3px solid var(--accent); padding: 14px 18px; }
 .why-box.missing { border-left-color: var(--warn); background: var(--warn-soft); }
@@ -239,7 +240,17 @@ details.edit[open] > summary { margin-bottom: 12px; }
 .files { list-style: none; padding: 0; margin: 0; font-size: .88rem; }
 .files li { display: flex; gap: 8px; justify-content: space-between; padding: 7px 0; border-bottom: 1px dashed var(--line); }
 .files li:last-child { border-bottom: 0; }
-.files a { overflow-wrap: anywhere; }
+.files li { align-items: flex-start; }
+.files a.file { display: flex; gap: 6px; align-items: flex-start; min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.files a.file svg { flex: none; margin-top: 3px; }
+.files li > .nowrap, .files li > form { flex: none; }
+.icon-btn {
+  display: inline-flex; padding: 3px; border: 0; border-radius: var(--radius-sm); background: transparent;
+  color: var(--ink-3); cursor: pointer;
+}
+.icon-btn:hover { color: var(--bad); background: var(--bad-soft); }
+.card-head { margin-bottom: 8px; }
+.card-head h2 { margin: 0; }
 .timeline { list-style: none; padding: 0; margin: 0; font-size: .86rem; }
 .timeline li { position: relative; padding: 0 0 12px 18px; border-left: 2px solid var(--line); margin-left: 4px; }
 .timeline li::before { content: ""; position: absolute; left: -6px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: var(--line-2); }
@@ -392,3 +403,4 @@ dialog.modal {
 dialog.modal::backdrop { background: var(--backdrop); }
 dialog.modal label.field { margin-bottom: 16px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.files + form { margin-top: 12px; }

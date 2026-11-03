@@ -509,6 +509,23 @@ class Library:
         finally:
             shutil.rmtree(staging, ignore_errors=True)
 
+    async def delete_attachment(self, ref: str, path: str) -> None:
+        """Remove one attachment: its file and its entry in ``resource.md``."""
+        resource_id = self.resolve(ref)
+        async with self.lock(resource_id):
+            resource = self.files.read(resource_id)
+            attachment = next((a for a in resource.attachments if a.path == path), None)
+            if attachment is None:
+                raise NotFound(f"no attachment {path!r} on {ref}")
+            resource.attachments.remove(attachment)
+            resource.updated_at = utcnow()
+            self.files.write(
+                resource
+            )  # file first: an orphan file is harmless, a dangling entry is not
+            target = safe_join(self.files.attachments_dir(resource_id), attachment.path)
+            target.unlink(missing_ok=True)
+            self.index.upsert(resource, None)
+
     async def attach_url(self, ref: str, url: str, added_by: str | None = None) -> str:
         resource_id = self.resolve(ref)
         try:

@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icon, kind_icon, status_badge %}
 {% block title %}{{ r.title }}{% endblock %}
+{% block wrap %}wide{% endblock %}
 {% block content %}
 <header class="r-head">
   {{ kind_icon(r.kind.value, 24) }}
@@ -42,20 +43,17 @@
     </section>
 
     <section class="card pad">
-      <div class="row"><h2 class="grow">{% if r.kind.value == "note" %}Note{% elif content_role == "readme" %}README{% elif r.kind.value == "document" %}Extracted text{% else %}Content{% endif %}</h2>
+      <div class="row card-head"><h2 class="grow">{% if r.kind.value == "note" %}Note{% elif content_role == "readme" %}README{% elif r.kind.value == "document" %}Extracted text{% else %}Content{% endif %}</h2>
         {% if r.snapshots|length > 1 and shown %}<span class="small muted">snapshot {{ shown.id | snapdate }}{% if shown.id != r.current_snapshot %} · <a href="/r/{{ r.slug }}">see current</a>{% endif %}</span>{% endif %}
+        {% if r.kind.value == "note" and user.can(ScopeLevel.WRITE) and editing != "note" %}<a class="btn sm" href="/r/{{ r.slug }}?edit=note#note">{{ icon("note", 13) }} Edit</a>{% endif %}
       </div>
       {% if r.kind.value != "note" and content %}<div class="untrusted-label">{{ icon("shield", 14) }} {{ "Extracted from the file" if r.kind.value == "document" else "Fetched from the source" }}; shown as data. Links open in a new tab, images are not loaded.</div>{% endif %}
-      {% if r.kind.value == "note" %}
-        <details class="edit">
-          <summary class="btn sm">Edit note</summary>
-          <form method="post" action="/r/{{ r.slug }}/edit"><input type="hidden" name="csrf" value="{{ csrf }}">
-            <textarea name="notes" rows="14">{{ r.notes }}</textarea>
-            <div class="row end"><button class="btn primary sm" type="submit">Save</button></div>
-          </form>
-        </details>
-      {% endif %}
-      {% if content %}
+      {% if r.kind.value == "note" and editing == "note" %}
+        <form method="post" action="/r/{{ r.slug }}/edit" id="note"><input type="hidden" name="csrf" value="{{ csrf }}">
+          <textarea name="notes" rows="18" autofocus>{{ r.notes }}</textarea>
+          <div class="row end"><a class="btn ghost sm" href="/r/{{ r.slug }}">Cancel</a><button class="btn primary sm" type="submit">Save note</button></div>
+        </form>
+      {% elif content %}
         <div class="prose">{{ content | markdown }}</div>
       {% elif r.fetch_status.value in ("pending", "fetching") %}
         <p class="muted"><span class="spinner"></span> Fetching… this page refreshes when it is done.</p>
@@ -67,16 +65,20 @@
     </section>
 
     {% if r.kind.value != "note" %}
-    <section class="card pad">
-      <h2>Your notes</h2>
-      {% if r.notes %}<div class="prose">{{ r.notes | markdown }}</div>{% endif %}
-      <details class="edit" {% if not r.notes %}open{% endif %}>
-        <summary class="btn sm {{ 'ghost' if not r.notes }}">{{ "Edit notes" if r.notes else "" }}</summary>
+    <section class="card pad" id="notes">
+      <div class="row card-head"><h2 class="grow">Your notes</h2>
+        {% if r.notes and editing != "notes" and user.can(ScopeLevel.WRITE) %}<a class="btn sm" href="/r/{{ r.slug }}?edit=notes#notes">{{ icon("note", 13) }} Edit</a>{% endif %}
+      </div>
+      {% if r.notes and editing != "notes" %}
+        <div class="prose">{{ r.notes | markdown }}</div>
+      {% elif user.can(ScopeLevel.WRITE) %}
         <form method="post" action="/r/{{ r.slug }}/edit"><input type="hidden" name="csrf" value="{{ csrf }}">
-          <textarea name="notes" rows="5" placeholder="Anything you want to remember about it (Markdown).">{{ r.notes }}</textarea>
-          <div class="row end"><button class="btn primary sm" type="submit">Save notes</button></div>
+          <textarea name="notes" rows="{{ 10 if r.notes else 4 }}" placeholder="Anything you want to remember about it (Markdown)." {% if editing == "notes" %}autofocus{% endif %}>{{ r.notes }}</textarea>
+          <div class="row end">{% if editing == "notes" %}<a class="btn ghost sm" href="/r/{{ r.slug }}">Cancel</a>{% endif %}<button class="btn primary sm" type="submit">Save notes</button></div>
         </form>
-      </details>
+      {% else %}
+        <p class="muted">No notes.</p>
+      {% endif %}
     </section>
     {% endif %}
   </div>
@@ -138,7 +140,7 @@
         <li class="{{ 'current' if s.id == r.current_snapshot }}">
           <a href="/r/{{ r.slug }}?snapshot={{ s.id }}"><b>{{ s.id | snapdate }}</b></a>{% if s.id == r.current_snapshot %} <span class="badge accent">current</span>{% endif %}
           <ul class="files">
-            {% for a in s.artifacts %}<li><a href="/r/{{ r.slug }}/files/snapshots/{{ s.id }}/{{ a.path }}">{{ icon("download", 13) }} {{ a.path }}</a><span class="muted nowrap">{{ a.size | filesize }}</span></li>{% endfor %}
+            {% for a in s.artifacts %}<li><a class="file" href="/r/{{ r.slug }}/files/snapshots/{{ s.id }}/{{ a.path }}">{{ icon("download", 13) }}<span>{{ a.path }}</span></a><span class="muted nowrap">{{ a.size | filesize }}</span></li>{% endfor %}
           </ul>
         </li>
       {% endfor %}
@@ -150,7 +152,11 @@
     <section class="card pad">
       <p class="section-title">Attachments</p>
       {% if r.attachments %}
-      <ul class="files">{% for a in r.attachments %}<li><a href="/r/{{ r.slug }}/files/attachments/{{ a.path }}" title="{{ a.origin_url or '' }}">{{ icon("download", 13) }} {{ a.path }}</a><span class="muted nowrap">{{ a.size | filesize }}</span></li>{% endfor %}</ul>
+      <ul class="files">{% for a in r.attachments %}<li>
+        <a class="file" href="/r/{{ r.slug }}/files/attachments/{{ a.path }}" title="{{ a.origin_url or a.path }}">{{ icon("download", 13) }}<span>{{ a.path }}</span></a>
+        <span class="muted nowrap">{{ a.size | filesize }}</span>
+        {% if user.can(ScopeLevel.ADMIN) %}<form method="post" action="/r/{{ r.slug }}/attachments/{{ a.path | urlquote }}/delete"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="icon-btn" type="submit" title="Delete {{ a.path }}" aria-label="Delete {{ a.path }}" data-confirm="Delete the attachment {{ a.path }}?">{{ icon("trash", 14) }}</button></form>{% endif %}
+      </li>{% endfor %}</ul>
       {% endif %}
       {% if user.can(ScopeLevel.WRITE) %}
       <form method="post" action="/r/{{ r.slug }}/attachments" enctype="multipart/form-data" data-autosubmit>

@@ -240,6 +240,49 @@ class TestUi:
             res.headers["location"]
         )
 
+    def test_delete_attachment_and_edit_in_place(
+        self, client: TestClient, tokens: dict[str, str]
+    ) -> None:
+        w = auth(tokens["write"])
+        nid = client.post("/api/v1/notes", json={"title": "T", "body": "hello"}, headers=w).json()[
+            "id"
+        ]
+        for name in ("keep.txt", "drop.txt"):
+            client.post(
+                f"/api/v1/resources/{nid}/attachments", files={"file": (name, b"x")}, headers=w
+            )
+        assert (
+            client.delete(f"/api/v1/resources/{nid}/attachments/drop.txt", headers=w).status_code
+            == 403
+        )
+
+        csrf = self.login(client, tokens["write"])
+        page = client.get(f"/r/{nid}").text
+        assert "/attachments/drop.txt/delete" not in page  # admin only
+        assert 'href="/r/' in page and "?edit=note" in page
+        editing = client.get(f"/r/{nid}?edit=note").text
+        assert '<textarea name="notes" rows="18" autofocus>hello</textarea>' in editing
+
+        csrf = self.login(client, tokens["admin"])
+        assert "/attachments/drop.txt/delete" in client.get(f"/r/{nid}").text
+        res = client.post(f"/r/{nid}/attachments/drop.txt/delete", data={"csrf": csrf},
+                          follow_redirects=False)  # fmt: skip
+        assert res.status_code == 303 and "Deleted+drop.txt" in res.headers["location"]
+        a = auth(tokens["admin"])
+        assert (
+            client.delete(f"/api/v1/resources/{nid}/attachments/keep.txt", headers=a).status_code
+            == 204
+        )
+        assert (
+            client.delete(f"/api/v1/resources/{nid}/attachments/keep.txt", headers=a).status_code
+            == 404
+        )
+        assert client.get(f"/api/v1/resources/{nid}", headers=a).json().get("attachments", []) == []
+        assert (
+            client.get(f"/api/v1/resources/{nid}/files/attachments/keep.txt", headers=a).status_code
+            == 404
+        )
+
     def test_read_token_cannot_write(self, client: TestClient, tokens: dict[str, str]) -> None:
         csrf = self.login(client, tokens["read"])
         assert client.post("/add", data={"url": URL, "csrf": csrf}).status_code == 403

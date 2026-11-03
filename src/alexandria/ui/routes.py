@@ -515,6 +515,7 @@ async def resource_page(
     who: User,
     ref: str,
     snapshot: str | None = None,
+    edit: str | None = None,
     notice: str | None = None,
     error: str | None = None,
 ) -> Response:
@@ -549,6 +550,7 @@ async def resource_page(
         notice=notice,
         error=error,
         captured=iso(resource.captured_at),
+        editing=edit if who.can(ScopeLevel.WRITE) else None,
     )
 
 
@@ -639,6 +641,16 @@ async def attach(
     except InvalidInput as exc:
         return back(f"/r/{ref}", error=str(exc))
     return back(f"/r/{ref}", error="Choose a file or give a URL.")
+
+
+@router.post("/r/{ref}/attachments/{path}/delete", dependencies=[Csrf])
+async def delete_attachment(c: Ctx, who: User, ref: str, path: str) -> Response:
+    need(who, ScopeLevel.ADMIN)
+    try:
+        await c.library.delete_attachment(ref, path)
+    except NotFound as exc:
+        return back(f"/r/{ref}", error=str(exc))
+    return back(f"/r/{ref}", notice=f"Deleted {path}.")
 
 
 async def _chunks(file: StarletteUpload) -> AsyncIterator[bytes]:

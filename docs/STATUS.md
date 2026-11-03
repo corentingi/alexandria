@@ -24,7 +24,7 @@
 | Hostile files: zip bomb, XML entities, corrupt PDF, binary-as-text | `TestExtract` |
 | Bulk import from text and bookmarks exports | `TestImport`, `TestDocumentsAndImport`; by hand |
 | Activity dashboard: 30-day capture chart, latest captures, live job table | by hand in Chrome |
-| Attachments: drop several files at once, links through a modal | `test_attach_several_files_and_a_link` |
+| Attachments: drop several files at once, links through a modal, repository links cloned, delete (admin) | `test_attach_several_files_and_a_link`, `test_attach_github_page_clones_project`, `test_delete_attachment_and_edit_in_place` |
 | Library export/import in independent ~2 GB tar parts (ADR-0015) | `test_transfer.py` (round trip, any order, duplicates, hostile tars, UI) |
 
 ## Known limits
