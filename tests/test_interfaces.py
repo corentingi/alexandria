@@ -7,6 +7,7 @@ import re
 import time
 from collections.abc import Iterator
 from typing import Any
+from urllib.parse import unquote_plus
 
 import httpx
 import pytest
@@ -238,6 +239,32 @@ class TestUi:
             and "default-src 'self'" in page.headers["content-security-policy"]
         )
         assert client.get("/r/does-not-exist").status_code == 404
+
+    def test_attach_several_files_and_a_link(
+        self, client: TestClient, tokens: dict[str, str]
+    ) -> None:
+        csrf = self.login(client, tokens["write"])
+        w = auth(tokens["write"])
+        nid = client.post("/api/v1/notes", json={"title": "T"}, headers=w).json()["id"]
+        page = client.get(f"/r/{nid}").text
+        assert 'data-dialog="#attach-link"' in page and "multiple" in page
+        res = client.post(
+            f"/r/{nid}/attachments",
+            data={"csrf": csrf},
+            files=[("file", ("a.txt", b"alpha")), ("file", ("b.txt", b"beta"))],
+            follow_redirects=False,
+        )
+        assert res.status_code == 303 and "Attached+2+files" in res.headers["location"]
+        paths = [
+            a["path"]
+            for a in client.get(f"/api/v1/resources/{nid}", headers=w).json()["attachments"]
+        ]
+        assert paths == ["attachments/a.txt", "attachments/b.txt"]
+        res = client.post(f"/r/{nid}/attachments", data={"csrf": csrf, "url": "http://10.0.0.1/x"},
+                          follow_redirects=False)  # fmt: skip
+        assert "error=" in res.headers["location"] and "SSRF" in unquote_plus(
+            res.headers["location"]
+        )
 
     def test_read_token_cannot_write(self, client: TestClient, tokens: dict[str, str]) -> None:
         csrf = self.login(client, tokens["read"])

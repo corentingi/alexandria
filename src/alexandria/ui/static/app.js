@@ -52,6 +52,28 @@
     if (!out) return;
     var names = Array.prototype.map.call(input.files, function (f) { return f.name; });
     out.textContent = names.length ? names.length + " file(s): " + names.join(", ") : "";
+    // <form data-autosubmit>: upload as soon as files are chosen or dropped.
+    var form = input.form;
+    if (names.length && form && form.hasAttribute("data-autosubmit")) {
+      out.textContent = "Uploading " + out.textContent + "…";
+      form.classList.add("sending");
+      form.submit();
+    }
+  });
+
+  // Modals: <button data-dialog="#id"> opens a <dialog>; [data-dialog-close] or Escape
+  // closes it. showModal() focuses the [autofocus] field, and Enter submits its form.
+  document.addEventListener("click", function (event) {
+    var opener = event.target.closest("[data-dialog]");
+    if (opener) {
+      var dialog = document.querySelector(opener.getAttribute("data-dialog"));
+      if (dialog && dialog.showModal) dialog.showModal();
+      return;
+    }
+    var closer = event.target.closest("[data-dialog-close]");
+    if (closer) { closer.closest("dialog").close(); return; }
+    // A click on the backdrop lands on the <dialog> element itself.
+    if (event.target.tagName === "DIALOG" && event.target.open) event.target.close();
   });
   ["dragenter", "dragover"].forEach(function (type) {
     document.addEventListener(type, function (event) {

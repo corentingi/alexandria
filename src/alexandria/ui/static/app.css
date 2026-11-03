@@ -12,6 +12,7 @@
   --accent-ink: #ffffff;
   --accent-soft: #e5eaf7;
   --mark: #f7e3a1;
+  --backdrop: rgba(29, 35, 48, .35);
   --ok: #2f7d4f;
   --ok-soft: #e1f1e6;
   --warn: #9a6400;
@@ -44,6 +45,7 @@
     --accent-ink: #10131a;
     --accent-soft: #232d48;
     --mark: #5a4a12;
+    --backdrop: rgba(0, 0, 0, .55);
     --ok: #6fcf97;
     --ok-soft: #1c3226;
     --warn: #e8b552;
@@ -320,6 +322,8 @@ a.stat:hover { text-decoration: none; border-color: var(--accent); transform: tr
 .dropzone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .dropzone svg { color: var(--accent); }
 .dropzone .files-chosen { font-size: .85rem; color: var(--ink); font-weight: 550; }
+.dropzone.compact { padding: 18px 14px; gap: 4px; margin-bottom: 10px; font-size: .9rem; }
+form.sending .dropzone { opacity: .6; pointer-events: none; }
 .formats { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; margin-top: 4px; }
 
 /* ---- chart -------------------------------------------------------------------- */
@@ -349,3 +353,12 @@ a.stat:hover { text-decoration: none; border-color: var(--accent); transform: tr
 .feed li { display: flex; gap: 10px; align-items: center; padding: 7px 0; border-bottom: 1px dashed var(--line); font-size: .88rem; }
 .feed li:last-child { border-bottom: 0; }
 .feed a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+
+/* ---- modal ------------------------------------------------------------------ */
+dialog.modal {
+  width: min(440px, calc(100vw - 32px)); padding: 20px; border: 1px solid var(--line);
+  border-radius: var(--radius); background: var(--surface); color: var(--ink); box-shadow: var(--shadow);
+}
+dialog.modal::backdrop { background: var(--backdrop); }
+dialog.modal label.field { margin-bottom: 16px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; }

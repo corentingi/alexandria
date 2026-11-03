@@ -616,16 +616,22 @@ async def attach(
     c: Ctx,
     who: User,
     ref: str,
-    file: UploadFile | None = None,
+    file: list[UploadFile] | None = None,
     url: Annotated[str, Form()] = "",
 ) -> Response:
     need(who, ScopeLevel.WRITE)
+    uploads = [f for f in file or [] if f.filename]
     try:
-        if file is not None and file.filename:
-            await c.library.attach_upload(
-                ref, file.filename, _chunks(file), file.content_type, who.name
-            )
-            return back(f"/r/{ref}", notice="File attached.")
+        if uploads:
+            names = []
+            for upload in uploads:
+                assert upload.filename
+                attachment = await c.library.attach_upload(
+                    ref, upload.filename, _chunks(upload), upload.content_type, who.name
+                )
+                names.append(attachment.path)
+            notice = f"Attached {names[0]}." if len(names) == 1 else f"Attached {len(names)} files."
+            return back(f"/r/{ref}", notice=notice)
         if url:
             await c.library.attach_url(ref, url, who.name)
             c.enqueued()

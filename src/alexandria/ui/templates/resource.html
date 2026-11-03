@@ -153,12 +153,30 @@
       <ul class="files">{% for a in r.attachments %}<li><a href="/r/{{ r.slug }}/files/attachments/{{ a.path }}" title="{{ a.origin_url or '' }}">{{ icon("download", 13) }} {{ a.path }}</a><span class="muted nowrap">{{ a.size | filesize }}</span></li>{% endfor %}</ul>
       {% endif %}
       {% if user.can(ScopeLevel.WRITE) %}
-      <form method="post" action="/r/{{ r.slug }}/attachments" enctype="multipart/form-data">
+      <form method="post" action="/r/{{ r.slug }}/attachments" enctype="multipart/form-data" data-autosubmit>
         <input type="hidden" name="csrf" value="{{ csrf }}">
-        <label class="field"><span class="sr-only">File</span><input type="file" name="file"></label>
-        <label class="field"><span class="sr-only">or URL</span><input type="url" name="url" placeholder="…or a URL to download"></label>
-        <button class="btn sm" type="submit">Attach</button>
+        <label class="dropzone compact">
+          {{ icon("upload", 20) }}
+          <b>Drop files here, or click to choose</b>
+          <span class="files-chosen"></span>
+          <input type="file" name="file" multiple required aria-label="Files to attach">
+        </label>
+        <noscript><button class="btn sm" type="submit">Upload</button></noscript>
       </form>
+      <button class="btn sm" type="button" data-dialog="#attach-link">{{ icon("link", 13) }} Attach a link</button>
+      <dialog id="attach-link" class="modal" aria-labelledby="attach-link-title">
+        <form method="post" action="/r/{{ r.slug }}/attachments">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <p class="section-title" id="attach-link-title">Attach a link</p>
+          <label class="field"><span>URL to download</span>
+            <input type="url" name="url" required autofocus placeholder="https://example.com/paper.pdf">
+          </label>
+          <div class="modal-actions">
+            <button class="btn ghost sm" type="button" data-dialog-close>Cancel</button>
+            <button class="btn primary sm" type="submit">Attach</button>
+          </div>
+        </form>
+      </dialog>
       {% endif %}
     </section>
 
