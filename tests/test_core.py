@@ -134,3 +134,15 @@ class TestChunking:
     def test_stable(self) -> None:
         text = "# A\n\n" + "b " * 3000
         assert chunk_markdown(text) == chunk_markdown(text)
+
+
+def test_flash_redirect_keeps_the_fragment_last() -> None:
+    from alexandria.ui.routes import back
+
+    res = back("/settings#library", notice="Export deleted.")
+    assert res.headers["location"] == "/settings?notice=Export+deleted.#library"
+    assert (
+        back("/r/x?edit=note#note", error="no").headers["location"]
+        == "/r/x?edit=note&error=no#note"
+    )
+    assert back("/settings#tokens").headers["location"] == "/settings#tokens"

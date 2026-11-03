@@ -162,9 +162,12 @@ def render(request: Request, name: str, *, code: int = 200, **data: Any) -> HTML
 
 
 def back(url: str, notice: str | None = None, error: str | None = None) -> RedirectResponse:
+    """Redirect with a flash message. The query goes before any ``#fragment``."""
+    path, hash_, fragment = url.partition("#")
     params = {k: v for k, v in {"notice": notice, "error": error}.items() if v}
-    sep = "&" if "?" in url else "?"
-    return RedirectResponse(url + (sep + urlencode(params) if params else ""), status_code=303)
+    if params:
+        path += ("&" if "?" in path else "?") + urlencode(params)
+    return RedirectResponse(path + hash_ + fragment, status_code=303)
 
 
 def _safe_next(value: str | None) -> str:

@@ -44,6 +44,18 @@
     if (button && !window.confirm(button.getAttribute("data-confirm"))) event.preventDefault();
   });
 
+  // A flash message on a page opened at a #section is moved into that section, under its
+  // heading, so it is seen where the action happened (the page top is scrolled away).
+  document.addEventListener("DOMContentLoaded", function () {
+    var target = window.location.hash && document.getElementById(window.location.hash.slice(1));
+    if (!target) return;
+    var heading = target.querySelector("h2, h3");
+    document.querySelectorAll(".flash").forEach(function (flash) {
+      if (heading) heading.insertAdjacentElement("afterend", flash);
+      else target.prepend(flash);
+    });
+  });
+
   // Drop zones: show chosen file names and highlight while dragging.
   document.addEventListener("change", function (event) {
     var input = event.target;
