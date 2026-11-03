@@ -83,3 +83,9 @@ over `<data>/config.yaml`. See [docs/DESIGN.md §13](docs/DESIGN.md#13-configura
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) — running, testing, the gate.
 - [docs/adrs/](docs/adrs/README.md) — decisions and their costs.
 - [docs/STATUS.md](docs/STATUS.md) — acceptance criteria, known limits, next steps.
+
+## Licence
+
+[GNU Affero General Public License v3.0](LICENSE) or later. You may use, change and share
+Alexandria; if you offer a modified version to others, including over a network, you must
+make its source available under the same licence.

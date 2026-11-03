@@ -18,7 +18,7 @@ from tests.test_interfaces import TestUi as _InterfaceUi  # aliased: not collect
 from tests.test_interfaces import auth
 
 HTML = {"content-type": "text/html"}
-REDDIT = "https://www.reddit.com/r/ProtonMail/comments/1abc/some_post/"
+REDDIT = "https://www.reddit.com/r/example/comments/1abc/some_post/"
 CHALLENGE = b"""<!DOCTYPE html><html lang="en"><head><title>Reddit</title>
 <script nonce="x">document.addEventListener("DOMContentLoaded",async function(){
 var e=document.forms[0];e.elements.namedItem("solution").value="1";e.requestSubmit()});
@@ -111,28 +111,28 @@ class TestAttachmentText:
             result = await library.ingest(REDDIT, why="announcement")
             await worker.drain()
         rid = result.resource.id
-        body = "Proton will re-interview staff about AI. " + "The thread discusses it. " * 12
+        body = "The lighthouse keeper logs every passing ship. " + "The thread discusses it. " * 12
         pdf = make_pdf([body, "Comments follow"])
-        await library.attach_upload(rid, "Proton post.pdf", stream(pdf))
+        await library.attach_upload(rid, "saved post.pdf", stream(pdf))
         await worker.drain()
 
         res = library.get(rid)
         [attachment] = res.attachments
         assert attachment.extraction == "ok"
-        assert attachment.text_path == ".text/Proton_post.pdf.md"
+        assert attachment.text_path == ".text/saved_post.pdf.md"
         assert res.title == "Quarterly Report"  # the PDF's title replaces the bot check's
-        hits = library.search("re-interview staff")
+        hits = library.search("lighthouse keeper")
         assert [row["id"] for _, row in hits] == [rid]
-        assert hits[0][0].heading_path == "Proton_post.pdf > Page 1"
+        assert hits[0][0].heading_path == "saved_post.pdf > Page 1"
         content = library.content(rid)
-        assert content["source_role"] == "attachment" and "re-interview" in content["text"]
+        assert content["source_role"] == "attachment" and "lighthouse" in content["text"]
 
-        before = [(row["id"], h.heading_path) for h, row in library.search("re-interview")]
+        before = [(row["id"], h.heading_path) for h, row in library.search("lighthouse")]
         assert (await library.reindex()).errors == []
-        assert [(row["id"], h.heading_path) for h, row in library.search("re-interview")] == before
+        assert [(row["id"], h.heading_path) for h, row in library.search("lighthouse")] == before
 
         await library.delete_attachment(rid, attachment.path)
-        assert library.search("re-interview staff") == []
+        assert library.search("lighthouse keeper") == []
         text_dir = library.files.attachments_dir(rid) / ".text"
         assert not any(text_dir.iterdir())
 
