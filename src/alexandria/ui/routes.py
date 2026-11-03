@@ -672,6 +672,16 @@ async def attach(
     return back(f"/r/{ref}", error="Choose a file or give a URL.")
 
 
+@router.post("/r/{ref}/snapshots/{snapshot_id}/delete", dependencies=[Csrf])
+async def delete_snapshot(c: Ctx, who: User, ref: str, snapshot_id: str) -> Response:
+    need(who, ScopeLevel.ADMIN)
+    try:
+        await c.library.delete_snapshot(ref, snapshot_id)
+    except (InvalidInput, NotFound) as exc:
+        return back(f"/r/{ref}", error=str(exc))
+    return back(f"/r/{ref}", notice=f"Deleted the snapshot of {_snapshot_date(snapshot_id)}.")
+
+
 @router.post("/r/{ref}/attachments/{path}/extract", dependencies=[Csrf])
 async def extract_attachment(c: Ctx, who: User, ref: str, path: str) -> Response:
     need(who, ScopeLevel.WRITE)

@@ -283,6 +283,31 @@ class TestUi:
             == 404
         )
 
+    def test_delete_snapshot_ui_and_api(self, client: TestClient, tokens: dict[str, str]) -> None:
+        w, a = auth(tokens["write"]), auth(tokens["admin"])
+        rid = client.post("/api/v1/documents", files={"file": ("n.md", b"# Hi\n\nheron")},
+                          headers=w).json()["id"]  # fmt: skip
+        wait_ready(client, rid, tokens["read"])
+        client.post(f"/api/v1/resources/{rid}/refetch", headers=w)
+        deadline = time.monotonic() + 10
+        while len(client.get(f"/api/v1/resources/{rid}", headers=a).json()["snapshots"]) < 2:
+            assert time.monotonic() < deadline
+            time.sleep(0.05)
+        first = client.get(f"/api/v1/resources/{rid}", headers=a).json()["snapshots"][0]["id"]
+        url = f"/api/v1/resources/{rid}/snapshots/{first}"
+        assert client.delete(url, headers=w).status_code == 403
+
+        csrf = self.login(client, tokens["admin"])
+        assert f"/snapshots/{first}/delete" in client.get(f"/r/{rid}").text
+        res = client.post(f"/r/{rid}/snapshots/{first}/delete", data={"csrf": csrf},
+                          follow_redirects=False)  # fmt: skip
+        assert res.status_code == 303 and "Deleted+the+snapshot" in res.headers["location"]
+        assert client.delete(url, headers=a).status_code == 404
+        only = client.get(f"/api/v1/resources/{rid}", headers=a).json()["snapshots"][0]["id"]
+        last = client.delete(f"/api/v1/resources/{rid}/snapshots/{only}", headers=a)
+        assert last.status_code == 400 and "only snapshot" in last.json()["detail"]
+        assert f"/snapshots/{only}/delete" not in client.get(f"/r/{rid}").text
+
     def test_read_token_cannot_write(self, client: TestClient, tokens: dict[str, str]) -> None:
         csrf = self.login(client, tokens["read"])
         assert client.post("/add", data={"url": URL, "csrf": csrf}).status_code == 403

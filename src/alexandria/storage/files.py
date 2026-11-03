@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import mimetypes
 import os
+import re
 import shutil
 from collections.abc import Iterator
 from datetime import datetime
@@ -25,6 +26,7 @@ from alexandria.security import safe_join
 
 RESOURCE_FILE = "resource.md"
 SNAPSHOT_FORMAT = "%Y%m%dT%H%M%SZ"
+_SNAPSHOT_ID = re.compile(r"^\d{8}T\d{6}Z$")
 
 # Frontmatter key order, so files diff and read nicely.
 _KEY_ORDER = [
@@ -120,6 +122,8 @@ class FileStore:
         return target
 
     def snapshot_dir(self, resource_id: str, snapshot_id: str) -> Path:
+        if not _SNAPSHOT_ID.match(snapshot_id):  # "." would be the snapshots folder itself
+            raise ValueError(f"not a snapshot id: {snapshot_id!r}")
         return safe_join(self.resource_dir(resource_id) / "snapshots", snapshot_id)
 
     def read_artifact_text(self, resource: Resource, role: str) -> str | None:

@@ -180,6 +180,11 @@ async def delete_resource(ref: str, c: Ctx, _: Admin) -> None:
     await c.library.delete(ref)
 
 
+@router.delete("/resources/{ref}/snapshots/{snapshot_id}", status_code=204)
+async def delete_snapshot(ref: str, snapshot_id: str, c: Ctx, _: Admin) -> None:
+    await c.library.delete_snapshot(ref, snapshot_id)
+
+
 @router.delete("/resources/{ref}/attachments/{path}", status_code=204)
 async def delete_attachment(ref: str, path: str, c: Ctx, _: Admin) -> None:
     await c.library.delete_attachment(ref, path)

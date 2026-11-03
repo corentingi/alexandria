@@ -404,3 +404,5 @@ dialog.modal::backdrop { background: var(--backdrop); }
 dialog.modal label.field { margin-bottom: 16px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .files + form { margin-top: 12px; }
+.snap-head { display: flex; gap: 8px; align-items: center; }
+.snap-head .grow { flex: 1; }

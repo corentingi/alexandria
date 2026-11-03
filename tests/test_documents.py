@@ -138,6 +138,46 @@ class TestDocuments:
         assert report.errors == []
         assert [(row["id"], h.snippet) for h, row in library.search("lamp")] == before != []
 
+    async def test_delete_snapshots(self, library: Library, worker: Worker) -> None:
+        from alexandria.library import InvalidInput, NotFound
+
+        result = await library.ingest_file("book.epub", stream(make_epub()))
+        await worker.drain()
+        await library.refetch(result.resource.id)
+        await worker.drain()
+        res = library.get(result.resource.id)
+        first, second = (s.id for s in res.snapshots)
+        assert res.current_snapshot == second
+
+        res = await library.delete_snapshot(res.id, first)  # an old one
+        assert [s.id for s in res.snapshots] == [second] and res.current_snapshot == second
+        assert not library.files.snapshot_dir(res.id, first).exists()
+        assert [row["id"] for _, row in library.search("lamp")] == [res.id]
+        with pytest.raises(InvalidInput, match="only snapshot"):
+            await library.delete_snapshot(res.id, second)
+        with pytest.raises(NotFound):
+            await library.delete_snapshot(res.id, ".")
+
+        await library.refetch(res.id)
+        await worker.drain()
+        third = library.get(res.id).current_snapshot
+        res = await library.delete_snapshot(res.id, third)  # the current one
+        assert res.current_snapshot == second
+        assert [row["id"] for _, row in library.search("lamp")] == [res.id]
+
+    async def test_hostile_snapshot_id(self, library: Library) -> None:
+        from alexandria.library import InvalidInput
+        from alexandria.models import Snapshot
+
+        note = await library.create_note("N", "x")
+        resource = library.files.read(note.id)
+        resource.snapshots = [Snapshot(id="."), Snapshot(id="20261103T000000Z")]
+        library.files.write(resource)
+        (library.files.resource_dir(note.id) / "snapshots" / "keep").mkdir(parents=True)
+        with pytest.raises(InvalidInput, match="not a snapshot id"):
+            await library.delete_snapshot(note.id, ".")
+        assert (library.files.resource_dir(note.id) / "snapshots" / "keep").exists()
+
     async def test_empty_upload_rejected(self, library: Library) -> None:
         from alexandria.library import InvalidInput
 

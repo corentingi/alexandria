@@ -544,6 +544,39 @@ class Library:
         finally:
             shutil.rmtree(staging, ignore_errors=True)
 
+    async def delete_snapshot(self, ref: str, snapshot_id: str) -> Resource:
+        """Remove one snapshot and its files. The last remaining snapshot cannot go.
+
+        Deleting the current snapshot makes the newest remaining one current. Like every
+        write, ``resource.md`` changes first: a leftover folder is harmless, a snapshot
+        listed but missing is not.
+        """
+        resource_id = self.resolve(ref)
+        async with self.lock(resource_id):
+            resource = self.files.read(resource_id)
+            snapshot = resource.snapshot(snapshot_id) if snapshot_id else None
+            if snapshot is None:
+                raise NotFound(f"no snapshot {snapshot_id!r} on {ref}")
+            try:
+                folder = self.files.snapshot_dir(resource_id, snapshot.id)
+            except (ValueError, PermissionError) as exc:
+                raise InvalidInput(str(exc)) from exc
+            if len(resource.snapshots) == 1:
+                raise InvalidInput(
+                    "this is the only snapshot: re-fetch first, or delete the resource"
+                )
+            if self.index.pending_jobs(resource_id, "fetch"):
+                raise InvalidInput("a fetch is queued or running; delete the snapshot after it")
+            resource.snapshots.remove(snapshot)
+            if resource.current_snapshot == snapshot.id:
+                resource.current_snapshot = resource.snapshots[-1].id
+            resource.updated_at = utcnow()
+            self.files.write(resource)
+            shutil.rmtree(folder, ignore_errors=True)
+            chunks, role = self._chunks_for(resource)
+            self.index.upsert(resource, chunks, role or "")
+        return resource
+
     async def delete_attachment(self, ref: str, path: str) -> None:
         """Remove one attachment: its file and its entry in ``resource.md``."""
         resource_id = self.resolve(ref)

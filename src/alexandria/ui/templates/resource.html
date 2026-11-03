@@ -142,7 +142,12 @@
       <ul class="timeline">
       {% for s in r.snapshots | reverse %}
         <li class="{{ 'current' if s.id == r.current_snapshot }}">
-          <a href="/r/{{ r.slug }}?snapshot={{ s.id }}"><b>{{ s.id | snapdate }}</b></a>{% if s.id == r.current_snapshot %} <span class="badge accent">current</span>{% endif %}
+          {% set total = s.artifacts | sum(attribute="size") %}
+          <div class="snap-head">
+            <a href="/r/{{ r.slug }}?snapshot={{ s.id }}"><b>{{ s.id | snapdate }}</b></a>{% if s.id == r.current_snapshot %} <span class="badge accent">current</span>{% endif %}
+            <span class="muted small nowrap grow">{{ total | filesize }}</span>
+            {% if user.can(ScopeLevel.ADMIN) and r.snapshots | length > 1 %}<form method="post" action="/r/{{ r.slug }}/snapshots/{{ s.id }}/delete"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="icon-btn" type="submit" title="Delete this snapshot" aria-label="Delete the snapshot of {{ s.id | snapdate }}" data-confirm="Delete the snapshot of {{ s.id | snapdate }} ({{ total | filesize }}) and its files?{% if s.id == r.current_snapshot %} The previous snapshot becomes current.{% endif %}">{{ icon("trash", 14) }}</button></form>{% endif %}
+          </div>
           <ul class="files">
             {% for a in s.artifacts %}<li><a class="file" href="/r/{{ r.slug }}/files/snapshots/{{ s.id }}/{{ a.path }}">{{ icon("download", 13) }}<span>{{ a.path }}</span></a><span class="muted nowrap">{{ a.size | filesize }}</span></li>{% endfor %}
           </ul>

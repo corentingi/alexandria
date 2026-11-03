@@ -26,6 +26,7 @@
 | Activity dashboard: 30-day capture chart, latest captures, live job table | by hand in Chrome |
 | Attachments: drop several files at once, links through a modal, repository links cloned, delete (admin) | `test_attach_several_files_and_a_link`, `test_attach_github_page_clones_project`, `test_delete_attachment_and_edit_in_place` |
 | Blocked sites: warning before saving, clear failure on bot checks; attachment text extracted, searched and shown in place (ADR-0017) | `test_walls.py`; by hand against the real Reddit post |
+| Delete old snapshots (admin; never the last one) | `test_delete_snapshots`, `test_delete_snapshot_ui_and_api` |
 | Library export/import in independent ~2 GB tar parts (ADR-0015) | `test_transfer.py` (round trip, any order, duplicates, hostile tars, UI) |
 
 ## Known limits
