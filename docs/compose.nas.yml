@@ -1,0 +1,20 @@
+# Alexandria on a NAS, from the published image (no build).
+#   1. Create the data folder and give it to uid 1000 (the user inside the image):
+#        sudo mkdir -p /volume1/docker/alexandria
+#        sudo chown -R 1000:1000 /volume1/docker/alexandria
+#   2. Put this file next to it as docker-compose.yml and run: docker compose up -d
+#   3. Read the first admin token: docker compose logs | grep -A2 "shown once"
+services:
+  alexandria:
+    image: ghcr.io/corentingi/alexandria:latest   # or pin a version, e.g. :0.1.0
+    container_name: alexandria
+    ports: ["8080:8080"]
+    # Local disks only (no NFS/SMB mount): SQLite needs working file locks.
+    volumes: ["/volume1/docker/alexandria:/data"]
+    environment:
+      # Optional: raises the GitHub API rate limit for repository metadata.
+      ALEXANDRIA_GITHUB__TOKEN: ""
+      # Behind an https reverse proxy (Synology "Login Portal > Reverse proxy", Caddy…):
+      # ALEXANDRIA_HTTP__PUBLIC_URL: "https://library.example.lan"
+      # ALEXANDRIA_HTTP__FORWARDED_ALLOW_IPS: "*"
+    restart: unless-stopped

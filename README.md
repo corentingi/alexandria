@@ -24,17 +24,21 @@ are covered by tests or were checked by hand (see [docs/STATUS.md](docs/STATUS.m
 
 ## Run it
 
+From the published image (on a NAS: see [docs/NAS.md](docs/NAS.md)):
+
 ```sh
-docker compose up -d
-docker compose logs | grep -A2 "shown once"   # the first-start admin token
-open http://localhost:8080                     # paste the token to sign in
+docker run -d --name alexandria -p 8080:8080 -v "$PWD/data:/data" \
+  ghcr.io/corentingi/alexandria:latest
+docker logs alexandria | grep -A2 "shown once"   # the first-start admin token
+open http://localhost:8080                       # paste the token to sign in
 ```
 
-Data goes to `./data` (set `ALEXANDRIA_VOLUME=/volume1/alexandria` on a NAS). The volume
-must be **local storage** (no NFS/SMB) and writable by uid 1000.
+Or build from source with `docker compose up -d --build` (data in `./data`, or set
+`ALEXANDRIA_VOLUME`). The volume must be **local storage** (no NFS/SMB) and writable by
+uid 1000.
 
 More tokens: Settings → Tokens (create, change scope, revoke), or
-`docker compose exec alexandria alexandria token create claude --scope write`.
+`docker exec alexandria alexandria token create claude --scope write`.
 
 ## Connect an agent
 
@@ -81,9 +85,31 @@ over `<data>/config.yaml`. See [docs/DESIGN.md §13](docs/DESIGN.md#13-configura
 
 - [docs/DESIGN.md](docs/DESIGN.md) — the v1 design.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — how the code is organized.
+- [docs/NAS.md](docs/NAS.md) — installing on a NAS from the published image.
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) — running, testing, the gate.
 - [docs/adrs/](docs/adrs/README.md) — decisions and their costs.
 - [docs/STATUS.md](docs/STATUS.md) — acceptance criteria, known limits, next steps.
+
+## Security
+
+Alexandria is built for a **home or office network**, not the open internet.
+
+- Every request needs a token. Tokens are random 256-bit secrets, stored only as SHA-256
+  hashes in `tokens.yaml`; scopes are `read`, `write` and `admin`. The browser keeps the
+  token in an HttpOnly, SameSite cookie, with CSRF protection on every form.
+- There is no rate limiting and no TLS of its own. For access from outside, use a VPN
+  (Tailscale, WireGuard, your NAS's VPN), not port forwarding. Behind an https reverse
+  proxy, set `ALEXANDRIA_HTTP__PUBLIC_URL` so the cookie is marked Secure.
+- Fetched pages and files are treated as untrusted: private and local addresses are
+  refused (SSRF guard on every redirect), archives and documents are size-capped, the UI
+  renders Markdown without raw HTML or remote images under a strict CSP, and agents get
+  fetched text under `untrusted_*` keys.
+- Report a vulnerability privately through GitHub's *Security → Report a vulnerability*
+  on this repository rather than in a public issue.
+
+Decisions and their costs are in [docs/adrs/](docs/adrs/README.md), notably
+[ADR-0007](docs/adrs/0007-ssrf-guard-at-ingest-and-every-hop.md) and
+[ADR-0010](docs/adrs/0010-ui-security-model.md).
 
 ## Licence
 
