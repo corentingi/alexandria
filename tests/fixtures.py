@@ -45,6 +45,13 @@ def make_pdf(pages: list[str], title: str = "Quarterly Report") -> bytes:
 _W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
 
 
+def _put(zf: zipfile.ZipFile, name: str, data: str | bytes) -> None:
+    """A fixed timestamp: two builds of the same fixture are byte-identical."""
+    info = zipfile.ZipInfo(name, date_time=(2026, 1, 1, 0, 0, 0))
+    info.compress_type = zf.compression  # ZipInfo would otherwise store it uncompressed
+    zf.writestr(info, data)
+
+
 def make_docx(document_xml_body: str | None = None) -> bytes:
     body = document_xml_body or (
         '<w:p><w:pPr><w:pStyle w:val="Title"/></w:pPr><w:r><w:t>Design Notes</w:t></w:r></w:p>'
@@ -60,9 +67,10 @@ def make_docx(document_xml_body: str | None = None) -> bytes:
     )
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
-        zf.writestr("[Content_Types].xml", "<Types/>")
-        zf.writestr("word/document.xml", f"<w:document {_W}><w:body>{body}</w:body></w:document>")
-        zf.writestr(
+        _put(zf, "[Content_Types].xml", "<Types/>")
+        _put(zf, "word/document.xml", f"<w:document {_W}><w:body>{body}</w:body></w:document>")
+        _put(
+            zf,
             "docProps/core.xml",
             '<cp:coreProperties xmlns:cp="x" xmlns:dc="http://purl.org/dc/elements/1.1/">'
             "<dc:title>Design Notes</dc:title><dc:creator>Grace Hopper</dc:creator>"
@@ -74,14 +82,16 @@ def make_docx(document_xml_body: str | None = None) -> bytes:
 def make_epub() -> bytes:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
-        zf.writestr("mimetype", "application/epub+zip")
-        zf.writestr(
+        _put(zf, "mimetype", "application/epub+zip")
+        _put(
+            zf,
             "META-INF/container.xml",
             '<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles>'
             '<rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>'
             "</rootfiles></container>",
         )
-        zf.writestr(
+        _put(
+            zf,
             "OEBPS/content.opf",
             '<package xmlns="http://www.idpf.org/2007/opf"><metadata '
             'xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>The Lighthouse Keeper</dc:title>'
@@ -90,11 +100,13 @@ def make_epub() -> bytes:
             '<item id="c2" href="text/ch2.xhtml" media-type="application/xhtml+xml"/></manifest>'
             '<spine><itemref idref="c2"/><itemref idref="c1"/></spine></package>',
         )
-        zf.writestr(
+        _put(
+            zf,
             "OEBPS/text/ch1.xhtml",
             "<html><body><h1>Chapter One</h1><p>The lamp burned all night.</p></body></html>",
         )
-        zf.writestr(
+        _put(
+            zf,
             "OEBPS/text/ch2.xhtml",
             "<html><body><h1>Prologue</h1><p>A storm over the island.</p>"
             "<ul><li>wind</li><li>rain</li></ul></body></html>",
@@ -105,7 +117,7 @@ def make_epub() -> bytes:
 def make_zip_bomb() -> bytes:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("word/document.xml", b"<a>" + b" " * 60_000_000 + b"</a>")
+        _put(zf, "word/document.xml", b"<a>" + b" " * 60_000_000 + b"</a>")
     return buf.getvalue()
 
 
@@ -121,5 +133,5 @@ def make_xxe_docx() -> bytes:
     )
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
-        zf.writestr("word/document.xml", xml)
+        _put(zf, "word/document.xml", xml)
     return buf.getvalue()
