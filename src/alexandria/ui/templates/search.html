@@ -14,7 +14,7 @@
   <a class="card stat" href="/?kind=document"><b>{{ stats.kinds.get("document", 0) }}</b><span>documents</span></a>
   <a class="card stat" href="/?kind=note"><b>{{ stats.kinds.get("note", 0) }}</b><span>notes</span></a>
   <a class="card stat" href="/activity"><b>{{ stats.week }}</b><span>added this week</span></a>
-  <div class="card stat"><b>{{ stats.bytes | filesize }}</b><span>archived</span></div>
+  <div class="card stat"><b>{{ stats.bytes | filesize }}</b><span>stored</span></div>
 </div>
 {% if stats.failed %}<div class="notice warn">{{ stats.failed }} resource{{ "s" if stats.failed > 1 }} failed to fetch. <a href="/activity?status=failed">See activity</a>.</div>{% endif %}
 {% endif %}
