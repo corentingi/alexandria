@@ -15,7 +15,7 @@
         <a class="title" href="/r/{{ row.slug }}"><b>{{ row.title }}</b></a>
         <div class="muted small">{{ row.canonical_url | host }} · {{ row.captured_at | ago }}{% if row.created_by %} · by {{ row.created_by }}{% endif %} {{ fetch_badge(row.fetch_status, row.fetch_error) }}</div>
       </div>
-      <form method="post" action="/r/{{ row.slug }}/status/archived"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn ghost sm" type="submit">Archive</button></form>
+      <form method="post" action="/r/{{ row.id }}/status/archived" hx-post="/r/{{ row.id }}/status/archived" hx-target="#inbox-{{ row.id }}" hx-swap="outerHTML"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="back" value="inbox"><button class="btn ghost sm" type="submit">Archive</button></form>
     </div>
     <form method="post" action="/r/{{ row.id }}/why" hx-post="/r/{{ row.id }}/why" hx-target="#inbox-{{ row.id }}" hx-swap="outerHTML">
       <input type="hidden" name="csrf" value="{{ csrf }}">

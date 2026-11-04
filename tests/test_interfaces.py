@@ -190,6 +190,24 @@ class TestUi:
         bad = client.post("/login", data={"token": "nope"})
         assert bad.status_code == 401
 
+    def test_archive_from_the_inbox_stays_there(
+        self, client: TestClient, tokens: dict[str, str]
+    ) -> None:
+        csrf = self.login(client, tokens["admin"])
+        a, b = (
+            client.post("/api/v1/notes", json={"title": t, "body": "x"},
+                        headers=auth(tokens["write"])).json()
+            for t in ("Alpha", "Beta")
+        )  # fmt: skip
+        assert "Alpha" in client.get("/inbox").text
+        res = client.post(f"/r/{a['id']}/status/archived", data={"csrf": csrf, "back": "inbox"},
+                          headers={"HX-Request": "true"})  # fmt: skip
+        assert res.status_code == 200 and 'id="inbox-' in res.text and "archived" in res.text
+        res = client.post(f"/r/{b['id']}/status/archived", data={"csrf": csrf, "back": "inbox"},
+                          follow_redirects=False)  # fmt: skip
+        assert res.headers["location"].startswith("/inbox?notice=")
+        assert "Alpha" not in client.get("/inbox").text
+
     def test_pages_and_add_flow(self, client: TestClient, tokens: dict[str, str]) -> None:
         csrf = self.login(client, tokens["admin"])
         for path in ("/", "/inbox", "/add", "/activity", "/tags", "/settings", "/?q=x"):

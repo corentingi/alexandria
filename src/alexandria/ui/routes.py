@@ -641,12 +641,23 @@ async def edit(
 
 
 @router.post("/r/{ref}/status/{status}", dependencies=[Csrf])
-async def set_status(c: Ctx, who: User, ref: str, status: Status) -> Response:
+async def set_status(
+    request: Request,
+    c: Ctx,
+    who: User,
+    ref: str,
+    status: Status,
+    back_to: Annotated[str, Form(alias="back")] = "",
+) -> Response:
     need(who, ScopeLevel.WRITE)
     try:
         resource = await c.library.update(ref, Update(status=status))
     except InvalidInput as exc:
         return back(f"/r/{ref}", error=str(exc))
+    if request.headers.get("hx-request"):  # triage in the inbox: the card is replaced
+        return render(request, "_inbox_done.html", r=resource)
+    if back_to == "inbox":  # the same, without JavaScript
+        return back("/inbox", notice=f"“{resource.title}” marked as {status.value}.")
     return back(f"/r/{resource.slug}", notice=f"Marked as {status.value}.")
 
 

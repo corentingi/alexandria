@@ -1,4 +1,6 @@
 {% from "_macros.html" import kind_icon %}
 <article class="card inbox-item done" id="inbox-{{ r.id }}">
-  <div class="row">{{ kind_icon(r.kind.value) }}<div class="grow"><a href="/r/{{ r.slug }}"><b>{{ r.title }}</b></a><div class="small">Kept — {{ r.why }}</div></div><span class="badge ok">kept</span></div>
+  <div class="row">{{ kind_icon(r.kind.value) }}<div class="grow"><a class="title" href="/r/{{ r.slug }}"><b>{{ r.title }}</b></a>
+  {%- if r.status.value == "archived" %}<div class="small">Archived</div></div><span class="badge">archived</span>
+  {%- else %}<div class="small">Kept — {{ r.why }}</div></div><span class="badge ok">kept</span>{% endif %}</div>
 </article>
