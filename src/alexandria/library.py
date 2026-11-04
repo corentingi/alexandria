@@ -27,7 +27,7 @@ from alexandria.fetchers.attachment import download_attachment
 from alexandria.fetchers.base import Fetcher, FetchError, PermanentFetchError, SnapshotResult
 from alexandria.fetchers.document import DocumentFetcher, extract_to
 from alexandria.fetchers.git_repo import GitRepoFetcher
-from alexandria.ids import new_id, unique_slug
+from alexandria.ids import is_id, new_id, unique_slug
 from alexandria.models import (
     Attachment,
     FetchStatus,
@@ -610,6 +610,8 @@ class Library:
         report = ReindexReport()
         if ref is not None:
             resource_id = self.index.resolve(ref) or ref
+            if not is_id(resource_id):
+                raise NotFound(ref)
             async with self.lock(resource_id):
                 if not self.files.exists(resource_id):
                     self.index.delete(resource_id)
@@ -619,7 +621,7 @@ class Library:
                 except InvalidResourceFile as exc:
                     report.errors.append(str(exc))
                     return report
-                chunks, role = self._chunks_for(resource)
+                chunks, role = self._chunks_or_error(resource, report.errors)
                 self.index.upsert(resource, chunks, role or "")
                 report.indexed = 1
             return report
@@ -646,7 +648,7 @@ class Library:
                 urls.add(resource.canonical_url)
             for problem in check_meta(resource.kind, resource.meta):
                 log.warning("%s: %s", resource_id, problem)
-            chunks, role = self._chunks_for(resource)
+            chunks, role = self._chunks_or_error(resource, report.errors)
             items.append((resource, chunks, role or ""))
         report.indexed = self.index.rebuild(items)
         return report
@@ -1110,7 +1112,7 @@ class Library:
             os.replace(source, target)
             if changed:
                 self.files.write(resource)
-            chunks, role = self._chunks_for(resource)
+            chunks, role = self._chunks_or_error(resource, report.errors)
             self.index.upsert(resource, chunks, role or "")
         if refetch and resource.kind != Kind.NOTE:
             self._enqueue("fetch", resource_id)
@@ -1160,6 +1162,18 @@ class Library:
                     heading = f"{heading} > {c.heading_path}"
                 chunks.append(Chunk(len(chunks), heading, c.text, role="attachment"))
         return chunks, role
+
+    def _chunks_or_error(
+        self, resource: Resource, errors: list[str]
+    ) -> tuple[list[Chunk], str | None]:
+        """``_chunks_for``, but a hand-edited or damaged file (a bad snapshot id, a path out
+        of the folder, text that is not UTF-8) indexes the resource without its text and
+        reports it, instead of failing a whole reindex or import."""
+        try:
+            return self._chunks_for(resource)
+        except (ValueError, OSError) as exc:
+            errors.append(f"{resource.id}: indexed without its text: {exc}")
+            return [], None
 
     def startup(self) -> int:
         """Reset interrupted jobs and wipe staging. Returns how many jobs were reset."""

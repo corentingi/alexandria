@@ -10,7 +10,7 @@ import pytest
 import respx
 
 from alexandria.jobs import Worker
-from alexandria.library import InvalidInput, Library, Update
+from alexandria.library import InvalidInput, Library, NotFound, Update
 from alexandria.models import FetchStatus, Kind, Status
 from alexandria.storage.index import SearchFilters
 from tests.conftest import ARTICLE_HTML
@@ -234,6 +234,24 @@ class TestReindex:
         report = await library.reindex()
         assert report.indexed == 1 and len(report.errors) == 1
         assert library.get(note.id)
+
+    async def test_unreadable_text_does_not_stop_the_reindex(
+        self, library: Library, worker: Worker
+    ) -> None:
+        rid = await ingest_article(library, worker)
+        note = await library.create_note("Owls", "Owls hunt at night.")
+        damaged = library.files.read(rid)
+        damaged.snapshots[0].id = damaged.current_snapshot = "not-a-snapshot"  # a hand edit
+        library.files.write(damaged)
+        report = await library.reindex()
+        assert report.indexed == 2
+        assert len(report.errors) == 1 and "indexed without its text" in report.errors[0]
+        assert [row["id"] for _, row in library.search("owls")] == [note.id]
+        assert library.get(rid).title  # still listed, findable by its metadata
+
+    async def test_reindex_unknown_ref_is_not_found(self, library: Library) -> None:
+        with pytest.raises(NotFound):
+            await library.reindex("no-such-slug")
 
 
 class TestAttachments:
