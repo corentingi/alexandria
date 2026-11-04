@@ -154,6 +154,8 @@ def render(request: Request, name: str, *, code: int = 200, **data: Any) -> HTML
         "inbox_count": c.library.index.counts().get("inbox", 0) if who else 0,
         "active_jobs": _active_jobs(c.library.index.job_counts()) if who else 0,
         "path": request.url.path,
+        # Called only by the pages with tag fields (add, resource).
+        "known_tags": lambda: [t for t, _ in c.library.tags()[:300]] if who else [],
     }
     response = templates.TemplateResponse(request, name, base | data, status_code=code)
     response.headers["Content-Security-Policy"] = (

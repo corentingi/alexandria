@@ -100,6 +100,31 @@
     focusCard(next || inboxCards()[0], true);
   });
 
+  // Tag fields complete the tag being typed from the tags in use (so agents and people
+  // reuse "mcp" instead of adding "MCP"). The suggestions are the whole field's value
+  // with the last tag completed, so picking one keeps the tags before it.
+  document.addEventListener("input", function (event) {
+    var input = event.target;
+    if (!input.matches || !input.matches("input[data-tag-input]")) return;
+    var list = document.getElementById("tag-options");
+    if (!list) return;
+    var all = (list.getAttribute("data-all") || "").split(" ").filter(Boolean);
+    var value = input.value;
+    var cut = Math.max(value.lastIndexOf(" "), value.lastIndexOf(","));
+    var before = value.slice(0, cut + 1);
+    var typed = value.slice(cut + 1).toLowerCase();
+    var used = before.toLowerCase().split(/[\s,]+/);
+    var matches = all.filter(function (t) {
+      return used.indexOf(t) < 0 && (!typed || (t.indexOf(typed) === 0 && t !== typed));
+    }).slice(0, 12);
+    list.textContent = "";
+    matches.forEach(function (t) {
+      var option = document.createElement("option");
+      option.value = before + t;
+      list.appendChild(option);
+    });
+  });
+
   // "/" focuses the search box, Escape leaves it.
   document.addEventListener("keydown", function (event) {
     var target = event.target;

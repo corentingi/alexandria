@@ -1,7 +1,8 @@
 {% extends "base.html" %}
-{% from "_macros.html" import icon %}
+{% from "_macros.html" import icon, tag_options %}
 {% block title %}Add{% endblock %}
 {% block content %}
+{{ tag_options(known_tags()) }}
 <div class="page-head"><div><h1>Add to the library</h1><p>Links and files are archived and indexed in the background; the originals are always kept.</p></div></div>
 <nav class="tabs">
   <a href="/add" class="{{ 'on' if tab not in ('note', 'file', 'import') }}">Link</a>
@@ -25,7 +26,7 @@
     <textarea name="why" rows="2" placeholder="Applies to every file. Without a reason they wait in the inbox."></textarea>
   </label>
   <div class="grid2">
-    <label class="field"><span>Tags</span><input type="text" name="tags" placeholder="papers, 2026"></label>
+    <label class="field"><span>Tags</span><input type="text" name="tags" list="tag-options" data-tag-input autocomplete="off" placeholder="papers, 2026"></label>
     <label class="field"><span>Project</span><input type="text" name="project" placeholder="Optional"></label>
   </div>
   <div class="row end"><a class="btn ghost" href="/">Cancel</a><button class="btn primary" type="submit">Upload</button></div>
@@ -42,7 +43,7 @@
   </label>
   <label class="field"><span>Why?</span><input type="text" name="why" placeholder="Optional; applies to every link"></label>
   <div class="grid2">
-    <label class="field"><span>Tags</span><input type="text" name="tags" placeholder="imported"></label>
+    <label class="field"><span>Tags</span><input type="text" name="tags" list="tag-options" data-tag-input autocomplete="off" placeholder="imported"></label>
     <label class="field"><span>Project</span><input type="text" name="project" placeholder="Optional"></label>
   </div>
   <p class="small muted">Links already in the library are skipped; private addresses are rejected.</p>
@@ -62,7 +63,7 @@
     <textarea name="why" rows="3" placeholder="Why is this worth keeping? Without a reason it waits in the inbox." {% if url %}autofocus{% endif %}>{{ why or "" }}</textarea>
   </label>
   <div class="grid2">
-    <label class="field"><span>Tags</span><input type="text" name="tags" value="{{ tags or '' }}" placeholder="self-hosted, mcp"><small>Separated by spaces or commas.</small></label>
+    <label class="field"><span>Tags</span><input type="text" name="tags" list="tag-options" data-tag-input autocomplete="off" value="{{ tags or '' }}" placeholder="self-hosted, mcp"><small>Separated by spaces or commas.</small></label>
     <label class="field"><span>Project</span><input type="text" name="project" value="{{ project or '' }}" placeholder="Optional"><small>Leave empty for the global library.</small></label>
   </div>
   <div class="row end"><a class="btn ghost" href="/">Cancel</a><button class="btn primary" type="submit">Save</button></div>
@@ -74,7 +75,7 @@
   <label class="field"><span>Note</span><textarea name="body" rows="12" placeholder="Markdown is welcome.">{{ body or "" }}</textarea></label>
   <label class="field"><span>Why?</span><input type="text" name="why" value="{{ why or '' }}" placeholder="Optional, but without it the note waits in the inbox."></label>
   <div class="grid2">
-    <label class="field"><span>Tags</span><input type="text" name="tags" value="{{ tags or '' }}"></label>
+    <label class="field"><span>Tags</span><input type="text" name="tags" list="tag-options" data-tag-input autocomplete="off" value="{{ tags or '' }}"></label>
     <label class="field"><span>Project</span><input type="text" name="project" value="{{ project or '' }}"></label>
   </div>
   <div class="row end"><a class="btn ghost" href="/">Cancel</a><button class="btn primary" type="submit">Save note</button></div>

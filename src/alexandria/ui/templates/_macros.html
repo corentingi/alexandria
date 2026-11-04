@@ -64,3 +64,9 @@
   </div>
 </article>
 {%- endmacro %}
+
+{#- Tags already in use, for the tag fields (list="tag-options"). Without JavaScript the
+    browser suggests them for the first tag; app.js completes the tag being typed. -#}
+{%- macro tag_options(tags) -%}
+<datalist id="tag-options" data-all="{{ tags | join(' ') }}">{% for t in tags %}<option value="{{ t }}"></option>{% endfor %}</datalist>
+{%- endmacro %}

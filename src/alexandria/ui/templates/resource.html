@@ -1,8 +1,9 @@
 {% extends "base.html" %}
-{% from "_macros.html" import icon, kind_icon, status_badge %}
+{% from "_macros.html" import icon, kind_icon, status_badge, tag_options %}
 {% block title %}{{ r.title }}{% endblock %}
 {% block wrap %}wide{% endblock %}
 {% block content %}
+{{ tag_options(known_tags()) }}
 <header class="r-head">
   {{ kind_icon(r.kind.value, 24) }}
   <div class="grow">
@@ -97,7 +98,7 @@
       <form method="post" action="/r/{{ r.slug }}/edit">
         <input type="hidden" name="csrf" value="{{ csrf }}">
         <label class="field"><span>Title</span><input type="text" name="title" value="{{ r.title }}"></label>
-        <label class="field"><span>Tags</span><input type="text" name="tags" value="{{ r.tags | join(' ') }}" placeholder="space separated"></label>
+        <label class="field"><span>Tags</span><input type="text" name="tags" list="tag-options" data-tag-input autocomplete="off" value="{{ r.tags | join(' ') }}" placeholder="space separated"></label>
         <label class="field"><span>Project</span><input type="text" name="project" value="{{ r.project or '' }}" placeholder="global"></label>
         <button class="btn sm" type="submit">Save details</button>
       </form>

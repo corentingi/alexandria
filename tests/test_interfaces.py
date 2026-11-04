@@ -248,6 +248,17 @@ class TestUi:
         js = client.get("/static/app.js").text
         assert "htmx:responseError" in js and "htmx:sendError" in js
 
+    def test_tag_fields_offer_the_tags_in_use(
+        self, client: TestClient, tokens: dict[str, str]
+    ) -> None:
+        made = client.post("/api/v1/notes", json={"title": "A", "body": "x", "tags": ["mcp"]},
+                           headers=auth(tokens["write"])).json()  # fmt: skip
+        self.login(client, tokens["write"])
+        for page in ("/add", f"/r/{made['id']}"):
+            html = client.get(page).text
+            assert '<datalist id="tag-options" data-all="mcp">' in html, page
+            assert 'list="tag-options" data-tag-input' in html, page
+
     def test_read_token_sees_no_write_controls(
         self, client: TestClient, tokens: dict[str, str]
     ) -> None:
