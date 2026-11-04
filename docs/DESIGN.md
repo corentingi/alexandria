@@ -434,7 +434,7 @@ Managed with `pydantic-settings`.
 ```yaml
 data_dir: /data
 http: { host: 0.0.0.0, port: 8080, session_secret: <random> }
-fetch: { timeout_s: 30, max_redirects: 5, max_bytes: 20000000, user_agent: "Alexandria/0.1" }
+fetch: { timeout_s: 30, max_redirects: 5, max_bytes: 20000000, user_agent: "Alexandria/0.1", min_bytes_per_s: 50000 }
 git: { full_history_max_mb: 500, shallow_depth: 1000, clone_timeout_s: 900, max_archive_mb: 2000 }
 github: { token: null }
 attachments: { max_mb: 500 }

@@ -36,10 +36,16 @@ class HttpSettings(BaseModel):
 
 
 class FetchSettings(BaseModel):
-    timeout_s: float = 30
+    timeout_s: float = 30  # per connect or read; a trickling server never trips it
     max_redirects: int = 5
     max_bytes: int = 20_000_000
     user_agent: str = f"Alexandria/{__version__}"
+    # The whole download must average at least this, or it fails (and is retried):
+    # deadline = timeout_s + max_bytes / min_bytes_per_s.
+    min_bytes_per_s: int = 50_000
+
+    def deadline_s(self, max_bytes: int) -> float:
+        return self.timeout_s + max_bytes / max(1, self.min_bytes_per_s)
 
 
 class GitSettings(BaseModel):

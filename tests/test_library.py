@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import subprocess
 import tarfile
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 import httpx
@@ -547,3 +548,26 @@ class TestInterruptedJobs:
         assert library.get(mine.resource.id).fetch_status == FetchStatus.READY
         job = library.index.job(other.job_id or "")
         assert job is not None and job.status == "queued"
+
+    async def test_trickling_download_hits_the_deadline(
+        self, library: Library, worker: Worker
+    ) -> None:
+        library.settings.fetch.timeout_s = 0.2
+        library.settings.fetch.min_bytes_per_s = 10**12  # deadline: about 0.2 s
+
+        async def trickle() -> AsyncIterator[bytes]:
+            for _ in range(100):
+                yield b"<p>x</p>"
+                await asyncio.sleep(0.05)  # each read is fast; the whole is not
+
+        with respx.mock() as router:
+            router.get(ARTICLE_URL).mock(
+                side_effect=lambda _: httpx.Response(
+                    200, content=trickle(), headers={"content-type": "text/html"}
+                )
+            )
+            result = await library.ingest(ARTICLE_URL, why="x")
+            await worker.drain()
+        res = library.get(result.resource.id)
+        assert res.fetch_status == FetchStatus.FAILED
+        assert "took longer than" in (res.fetch_error or "")

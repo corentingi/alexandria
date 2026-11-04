@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -89,7 +90,27 @@ async def download(
     max_bytes: int,
     client: httpx.AsyncClient | None = None,
 ) -> Download:
-    """Stream ``url`` into ``dest``. Applies the SSRF guard on each redirect hop."""
+    """Stream ``url`` into ``dest``. Applies the SSRF guard on each redirect hop.
+
+    httpx's timeout is per read, so a server sending a byte every few seconds would hold
+    a worker forever: the whole download also has a deadline, scaled to ``max_bytes``.
+    """
+    deadline = settings.fetch.deadline_s(max_bytes)
+    try:
+        async with asyncio.timeout(deadline):
+            return await _download(url, dest, settings, max_bytes, client)
+    except TimeoutError as exc:
+        dest.unlink(missing_ok=True)
+        raise FetchError(f"download of {url} took longer than {deadline:.0f}s") from exc
+
+
+async def _download(
+    url: str,
+    dest: Path,
+    settings: Settings,
+    max_bytes: int,
+    client: httpx.AsyncClient | None,
+) -> Download:
     own_client = client is None
     client = client or http_client(settings)
     redirects: list[str] = []
