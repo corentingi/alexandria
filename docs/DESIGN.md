@@ -479,7 +479,7 @@ metadata; relations between resources; browser extension; integration with the
 "control tower" project.
 
 ## 16. Deployment
-- Dockerfile based on `python:3.13-slim`, plus `git` and `ca-certificates`. Multi-arch
+- Dockerfile based on `python:3.14-slim`, plus `git` and `ca-certificates`. Multi-arch
   build (amd64 and arm64). Non-root user, `VOLUME /data`, `EXPOSE 8080`, `HEALTHCHECK`
   on `/healthz`, entrypoint `alexandria serve`.
 - The volume **must be local storage on the host** (no NFS or SMB mount), because SQLite
