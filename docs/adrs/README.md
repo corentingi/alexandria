@@ -25,3 +25,4 @@ mark the old one superseded.
 | [0017](0017-blocked-sites-and-attachment-text.md) | Sites that block fetches; attachment text standing in | Accepted |
 | [0018](0018-manage-tokens-in-the-ui.md) | Tokens are managed in the UI too (amends 0010) | Accepted |
 | [0019](0019-ssrf-guard-pins-the-connection.md) | The SSRF guard pins the connection to the checked address (amends 0007) | Accepted |
+| [0020](0020-parsers-run-in-a-child-process.md) | Untrusted files are parsed in a child process (amends 0012) | Accepted |

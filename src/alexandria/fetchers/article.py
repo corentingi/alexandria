@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import mimetypes
 from pathlib import Path
@@ -12,8 +11,10 @@ import trafilatura
 from trafilatura.metadata import extract_metadata
 
 from alexandria.config import Settings
+from alexandria.extract import ExtractionError
 from alexandria.fetchers.base import PermanentFetchError, SnapshotResult, download
 from alexandria.fetchers.document import extract_to
+from alexandria.isolate import run_isolated
 from alexandria.models import Resource
 from alexandria.storage.files import describe_file
 from alexandria.walls import detect_block
@@ -44,7 +45,13 @@ class ArticleFetcher:
             page = staging_dir / "page.html"
             body_path.rename(page)
             artifacts.append(describe_file(page, "page"))
-            markdown, extracted = await asyncio.to_thread(_extract, raw, result.final_url)
+            try:
+                data = await run_isolated(
+                    "article", [str(page), result.final_url], self.settings.extract
+                )
+                markdown, extracted = data["markdown"], data["info"]
+            except ExtractionError as exc:  # the page is kept; its text could not be read
+                markdown, extracted = None, {"extraction_error": str(exc)}
             if blocked := detect_block(raw, result.final_url, len(markdown or "")):
                 raise PermanentFetchError(blocked)
             if markdown:
@@ -66,6 +73,7 @@ class ArticleFetcher:
             doc = await extract_to(
                 original, staging_dir, result.final_url.rsplit("/", 1)[-1],
                 result.content_type, result.final_url,  # with its charset
+                limits=self.settings.extract,
             )  # fmt: skip
             artifacts.extend(doc.artifacts)
             meta.update(doc.meta)

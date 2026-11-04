@@ -8,14 +8,14 @@ archived and downloadable, flagged ``meta.extraction: unsupported | failed``.
 
 from __future__ import annotations
 
-import asyncio
 import json
 from pathlib import Path
 from typing import Any
 
-from alexandria.config import Settings
-from alexandria.extract import ExtractionError, detect_format, extract
+from alexandria.config import ExtractSettings, Settings
+from alexandria.extract import Extraction, ExtractionError, detect_format
 from alexandria.fetchers.base import PermanentFetchError, SnapshotResult
+from alexandria.isolate import run_isolated
 from alexandria.models import Artifact, Resource
 from alexandria.storage.files import FileStore, describe_file
 
@@ -25,6 +25,7 @@ POOR_EXTRACTION_CHARS = 200
 class DocumentFetcher:
     def __init__(self, settings: Settings) -> None:
         self.files = FileStore(settings.data_dir)
+        self.limits = settings.extract
 
     async def fetch(self, resource: Resource, staging_dir: Path) -> SnapshotResult:
         source = resource.source_file
@@ -33,7 +34,7 @@ class DocumentFetcher:
         path = self.files.resource_dir(resource.id) / "source" / source.path
         if not path.is_file():
             raise PermanentFetchError(f"source file {source.path} is missing")
-        return await extract_to(path, staging_dir, source.path, source.mime)
+        return await extract_to(path, staging_dir, source.path, source.mime, limits=self.limits)
 
 
 def charset_of(content_type: str | None) -> str | None:
@@ -51,6 +52,8 @@ async def extract_to(
     filename: str | None,
     mime: str | None,
     url: str | None = None,
+    *,
+    limits: ExtractSettings,
 ) -> SnapshotResult:
     """Extract ``path`` into ``staging_dir``: content.md + extract.json. A charset in
     ``mime`` (``text/plain; charset=shift_jis``) is used to decode text formats."""
@@ -64,7 +67,8 @@ async def extract_to(
         meta["extraction"] = "unsupported"
     else:
         try:
-            result = await asyncio.to_thread(extract, path, fmt, url, charset_of(mime))
+            data = await run_isolated("extract", [str(path), fmt, url, charset_of(mime)], limits)
+            result = Extraction(**data)
         except ExtractionError as exc:
             meta["extraction"] = "failed"
             meta["extraction_error"] = str(exc)

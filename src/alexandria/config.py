@@ -60,6 +60,14 @@ class GithubSettings(BaseModel):
     api_url: str = "https://api.github.com"
 
 
+class ExtractSettings(BaseModel):
+    """Limits for parsing untrusted files (PDF, DOCX, EPUB, HTML) in a child process."""
+
+    timeout_s: float = 300
+    max_memory_mb: int = 2048  # enforced on Linux (the Docker image), not on macOS
+    isolate: bool = True  # False runs the parser in a thread: tests and debugging only
+
+
 class AttachmentSettings(BaseModel):
     max_mb: int = 500
 
@@ -97,6 +105,7 @@ class Settings(BaseSettings):
     git: GitSettings = Field(default_factory=GitSettings)
     github: GithubSettings = Field(default_factory=GithubSettings)
     attachments: AttachmentSettings = Field(default_factory=AttachmentSettings)
+    extract: ExtractSettings = Field(default_factory=ExtractSettings)
     worker: WorkerSettings = Field(default_factory=WorkerSettings)
     export: ExportSettings = Field(default_factory=ExportSettings)
     security: SecuritySettings = Field(default_factory=SecuritySettings)

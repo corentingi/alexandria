@@ -7,8 +7,10 @@ import httpx
 import pytest
 import respx
 
+from alexandria.config import ExtractSettings
 from alexandria.extract import ExtractionError, _decode, detect_format, extract
 from alexandria.fetchers.document import charset_of
+from alexandria.isolate import run_isolated
 from alexandria.jobs import Worker
 from alexandria.library import Library, Update, parse_url_list
 from alexandria.models import FetchStatus, Kind, Status
@@ -119,6 +121,26 @@ class TestDecoding:
             result = await library.ingest(url, why="x")
             await worker.drain()
         assert "日本語のテキスト" in library.content(result.resource.id)["text"]
+
+
+class TestIsolation:
+    async def test_parser_runs_in_a_child_and_gives_up_in_time(self, tmp_path: Path) -> None:
+        pdf = tmp_path / "a.pdf"
+        pdf.write_bytes(make_pdf(["The heron waits by the estuary. " * 20]))
+        data = await run_isolated("extract", [str(pdf), "pdf", None, None], ExtractSettings())
+        assert "heron" in data["markdown"]
+        with pytest.raises(ExtractionError, match="gave up after"):
+            await run_isolated(
+                "extract", [str(pdf), "pdf", None, None], ExtractSettings(timeout_s=0.001)
+            )
+
+    async def test_parser_errors_come_back(self, tmp_path: Path) -> None:
+        broken = tmp_path / "b.pdf"
+        broken.write_bytes(b"%PDF-1.7 not really")
+        with pytest.raises(ExtractionError, match="could not read pdf"):
+            await run_isolated("extract", [str(broken), "pdf", None, None], ExtractSettings())
+        with pytest.raises(ValueError, match="unknown task"):
+            await run_isolated("os.system", ["true"], ExtractSettings())
 
 
 class TestDocuments:

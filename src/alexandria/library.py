@@ -942,7 +942,10 @@ class Library:
             raise PermanentFetchError(f"attachment {name} was deleted")
         staging = self.files.new_staging_dir(job.id)
         try:
-            result = await extract_to(safe_join(directory, name), staging, name, current.mime)
+            result = await extract_to(
+                safe_join(directory, name), staging, name, current.mime,
+                limits=self.settings.extract,
+            )  # fmt: skip
             async with self.lock(resource_id):
                 resource = self.files.read(resource_id)
                 attachment = next((a for a in resource.attachments if a.path == name), None)
