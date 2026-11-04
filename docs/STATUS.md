@@ -36,6 +36,12 @@
 - Trafilatura sometimes turns lines starting with `#` inside unfenced code into headings.
 - Git clone timeout falls back to shallow on *any* non-"not found" failure, not only size.
 - A review on 2026-11-02 found 8 issues, all fixed (ADR-0014), each with a regression test.
+- A whole-codebase review on 2026-11-04 led to DNS-rebinding pinning (ADR-0019), parsers
+  in a child process (ADR-0020), link imports as jobs, and fixes to jobs, reindex,
+  limits and the UI. Still open from it: search snippets for every match before the
+  limit, no HTTP connection reuse, the Activity page polls even when idle, no time limit
+  on a whole job (only on downloads, parsing and git clones).
+- Fetches ignore `HTTP_PROXY`/`HTTPS_PROXY`: a proxy would bypass the SSRF guard.
 - No incremental `git fetch` on re-fetch: each snapshot is a full new clone.
 - `stars`, `topics`… are refreshed only on re-fetch.
 - No OCR: scanned PDFs are kept and flagged `extraction: poor`.
