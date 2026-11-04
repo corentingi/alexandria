@@ -21,7 +21,9 @@ from typing import Any
 from alexandria.chunking import Chunk
 from alexandria.models import Resource, iso, utcnow
 
-SCHEMA_VERSION = 1
+# 2: resources_fts rows use the resources rowid, so updates delete by rowid, not by a
+#    full scan of the UNINDEXED resource_id column.
+SCHEMA_VERSION = 2
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS resources (
@@ -170,7 +172,11 @@ class Index:
         self._lock = threading.RLock()
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self._writer = self._connect()
+        version = self._writer.execute("PRAGMA user_version").fetchone()[0]
         self._writer.executescript(_SCHEMA)
+        if 0 < version < 2:
+            with self.write() as db:
+                _refill_resources_fts(db)
         self._writer.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         self._writer.commit()
 
@@ -228,7 +234,7 @@ class Index:
             db.execute("DELETE FROM resources_fts")
             db.execute("INSERT INTO chunks_fts(chunks_fts) VALUES ('rebuild')")
             for resource, chunks, role in items:
-                _upsert(db, resource, chunks, role)
+                _upsert(db, resource, chunks, role, fresh=True)
                 count += 1
         return count
 
@@ -512,8 +518,13 @@ class Index:
 
 
 def _upsert(
-    db: sqlite3.Connection, r: Resource, chunks: Sequence[Chunk] | None, source_role: str
+    db: sqlite3.Connection,
+    r: Resource,
+    chunks: Sequence[Chunk] | None,
+    source_role: str,
+    fresh: bool = False,
 ) -> None:
+    """Index one resource. ``fresh``: the tables were just emptied (rebuild)."""
     db.execute(
         "INSERT INTO resources (id, slug, kind, title, source_url, canonical_url, why, notes, "
         "status, fetch_status, fetch_error, scope, project, captured_at, updated_at, created_by, "
@@ -568,23 +579,14 @@ def _upsert(
              json.dumps({"added_by": att.added_by})),
         )  # fmt: skip
 
-    db.execute("DELETE FROM resources_fts WHERE resource_id = ?", (r.id,))
-    db.execute(
-        "INSERT INTO resources_fts (resource_id, title, why, notes, tags, meta_text) "
-        "VALUES (?,?,?,?,?,?)",
-        # A note's body is its content: it is searched through chunks, not as notes.
-        (
-            r.id,
-            r.title,
-            r.why or "",
-            "" if r.kind.value == "note" else r.notes,
-            " ".join(r.tags),
-            _meta_text(r.meta),
-        ),
-    )
+    rowid = db.execute("SELECT rowid FROM resources WHERE id = ?", (r.id,)).fetchone()[0]
+    if not fresh:
+        db.execute("DELETE FROM resources_fts WHERE rowid = ?", (rowid,))
+    _insert_resource_fts(db, rowid, r.id, r.kind.value, r.title, r.why, r.notes, r.tags, r.meta)
 
     if chunks is not None:
-        db.execute("DELETE FROM chunks WHERE resource_id = ?", (r.id,))
+        if not fresh:
+            db.execute("DELETE FROM chunks WHERE resource_id = ?", (r.id,))
         db.executemany(
             "INSERT INTO chunks (resource_id, snapshot, ord, heading_path, source_role, text) "
             "VALUES (?,?,?,?,?,?)",
@@ -593,8 +595,46 @@ def _upsert(
         )  # fmt: skip
 
 
+def _insert_resource_fts(
+    db: sqlite3.Connection,
+    rowid: int,
+    resource_id: str,
+    kind: str,
+    title: str,
+    why: str | None,
+    notes: str | None,
+    tags: Sequence[str],
+    meta: dict[str, Any],
+) -> None:
+    db.execute(
+        "INSERT INTO resources_fts (rowid, resource_id, title, why, notes, tags, meta_text) "
+        "VALUES (?,?,?,?,?,?,?)",
+        # A note's body is its content: it is searched through chunks, not as notes.
+        (rowid, resource_id, title, why or "", "" if kind == "note" else (notes or ""),
+         " ".join(tags), _meta_text(meta)),
+    )  # fmt: skip
+
+
+def _refill_resources_fts(db: sqlite3.Connection) -> None:
+    """Schema 1 to 2: give every resources_fts row its resource's rowid."""
+    db.execute("DELETE FROM resources_fts")
+    tags: dict[str, list[str]] = {}
+    for row in db.execute("SELECT resource_id, tag FROM tags ORDER BY rowid"):
+        tags.setdefault(row["resource_id"], []).append(row["tag"])
+    for row in db.execute(
+        "SELECT rowid, id, kind, title, why, notes, meta FROM resources"
+    ).fetchall():
+        _insert_resource_fts(
+            db, row["rowid"], row["id"], row["kind"], row["title"], row["why"], row["notes"],
+            tags.get(row["id"], []), json.loads(row["meta"] or "{}"),
+        )  # fmt: skip
+
+
 def _delete(db: sqlite3.Connection, resource_id: str) -> None:
-    db.execute("DELETE FROM resources_fts WHERE resource_id = ?", (resource_id,))
+    db.execute(
+        "DELETE FROM resources_fts WHERE rowid = (SELECT rowid FROM resources WHERE id = ?)",
+        (resource_id,),
+    )
     for table in _DERIVED_TABLES[:-1]:
         db.execute(f"DELETE FROM {table} WHERE resource_id = ?", (resource_id,))  # noqa: S608
     db.execute("DELETE FROM resources WHERE id = ?", (resource_id,))

@@ -13,7 +13,7 @@ import respx
 from alexandria.jobs import Worker
 from alexandria.library import InvalidInput, Library, NotFound, Update
 from alexandria.models import FetchStatus, Kind, Status
-from alexandria.storage.index import SearchFilters
+from alexandria.storage.index import Index, SearchFilters
 from tests.conftest import ARTICLE_HTML
 
 ARTICLE_URL = "https://blog.example.com/posts/on-building-libraries?utm_source=hn"
@@ -207,6 +207,32 @@ class TestNotes:
 
 
 class TestReindex:
+    async def test_title_index_follows_updates_and_deletes(self, library: Library) -> None:
+        note = await library.create_note("Kestrel", "x")
+        for title in ("Merlin", "Hobby falcon"):
+            await library.update(note.id, Update(title=title))
+        assert [r["id"] for _, r in library.search("hobby")] == [note.id]
+        assert library.search("kestrel") == [] and library.search("merlin") == []
+        await library.delete(note.id)
+        assert library.search("hobby") == []
+
+    async def test_schema_1_index_is_migrated(self, library: Library) -> None:
+        note = await library.create_note("Kestrel", "x")
+        index = library.index
+        with index.write() as db:  # a schema 1 database: unrelated resources_fts rowids
+            db.execute("DELETE FROM resources_fts")
+            db.execute(
+                "INSERT INTO resources_fts (rowid, resource_id, title, why, notes, tags, "
+                "meta_text) VALUES (999, ?, 'Kestrel', '', '', '', '')",
+                (note.id,),
+            )
+            db.execute("PRAGMA user_version = 1")
+        index.close()
+        library.index = Index(index.db_path)
+        await library.update(note.id, Update(title="Merlin"))
+        assert library.search("kestrel") == []
+        assert [r["id"] for _, r in library.search("merlin")] == [note.id]
+
     async def test_delete_db_and_reindex_is_identical(
         self, library: Library, worker: Worker
     ) -> None:
