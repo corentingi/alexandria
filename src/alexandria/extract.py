@@ -112,7 +112,8 @@ def extract(path: Path, fmt: str, url: str | None = None, charset: str | None = 
         raise
     except Exception as exc:  # a broken file must never crash the worker
         log.warning("extraction of %s as %s failed: %s", path.name, fmt, exc)
-        raise ExtractionError(f"could not read {fmt}: {exc}") from exc
+        reason = "out of memory" if isinstance(exc, MemoryError) else str(exc)
+        raise ExtractionError(f"could not read {fmt}: {reason or type(exc).__name__}") from exc
     result.markdown = _tidy(result.markdown)[:MAX_MARKDOWN_CHARS]
     return result
 
