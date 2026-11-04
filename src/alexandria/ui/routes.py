@@ -513,13 +513,15 @@ async def import_links(
         text += "\n" + (await upload.read(20_000_000)).decode("utf-8", errors="replace")
     if not text.strip():
         return back("/add?tab=import", error="Paste some links or choose a bookmarks file.")
-    report = await c.library.import_urls(
-        text, why or None, _split_tags(tags), project or None, who.name
-    )
+    name = upload.filename if isinstance(upload, StarletteUpload) and upload.filename else None
+    try:
+        _, count = c.library.start_url_import(
+            text, why or None, _split_tags(tags), project or None, who.name, name
+        )
+    except InvalidInput as exc:
+        return back("/add?tab=import", error=str(exc))
     c.enqueued()
-    notice = (f"{len(report.created)} link(s) saved, {len(report.duplicates)} already there, "
-              f"{len(report.errors)} rejected.")  # fmt: skip
-    return back("/activity", notice=notice, error="; ".join(report.errors[:5]) or None)
+    return back("/activity", notice=f"Importing {count} link(s) in the background.")
 
 
 def _split_tags(raw: str) -> list[str]:

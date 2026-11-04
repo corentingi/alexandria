@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from alexandria.auth import Principal, ScopeLevel, bearer
 from alexandria.context import AppContext
-from alexandria.library import Update
+from alexandria.library import NotFound, Update
 from alexandria.models import Kind, Scope, Status
 from alexandria.storage.index import SearchFilters
 from alexandria.views import job_view, resource_detail, search_result
@@ -149,12 +149,17 @@ class ImportBody(_Strict):
     project: str | None = None
 
 
-@router.post("/import")
+@router.post("/import", status_code=202)
 async def import_urls(body: ImportBody, c: Ctx, who: Writer) -> dict[str, Any]:
-    """Ingest every URL in a text, or in a browser bookmarks export (HTML)."""
-    report = await c.library.import_urls(body.text, body.why, body.tags, body.project, who.name)
+    """Queue the import of every URL in a text, or in a browser bookmarks export (HTML).
+
+    Returns the job: `GET /jobs/{job_id}` shows its progress, then its report
+    (`payload.report`: created, duplicates, errors)."""
+    job_id, count = c.library.start_url_import(
+        body.text, body.why, body.tags, body.project, who.name
+    )
     c.enqueued()
-    return {"created": report.created, "duplicates": report.duplicates, "errors": report.errors}
+    return {"job_id": job_id, "links": count}
 
 
 @router.post("/notes", status_code=201)
@@ -290,6 +295,14 @@ async def tags(c: Ctx, _: Reader) -> dict[str, Any]:
 @router.get("/jobs")
 async def jobs(c: Ctx, _: Reader, status: str | None = None, limit: int = 100) -> dict[str, Any]:
     return {"jobs": [job_view(j) for j in c.library.index.jobs(status, limit=limit)]}
+
+
+@router.get("/jobs/{job_id}")
+async def job(job_id: str, c: Ctx, _: Reader) -> dict[str, Any]:
+    found = c.library.index.job(job_id)
+    if found is None:
+        raise NotFound(f"no job {job_id}")
+    return job_view(found)
 
 
 @router.post("/jobs/{job_id}/retry")

@@ -33,6 +33,16 @@ def wait_ready(client: TestClient, ref: str, token: str, timeout: float = 10) ->
     raise AssertionError("fetch did not finish")
 
 
+def wait_job(client: TestClient, job_id: str, token: str, timeout: float = 10) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        data: dict[str, Any] = client.get(f"/api/v1/jobs/{job_id}", headers=auth(token)).json()
+        if data["status"] in ("done", "failed"):
+            return data
+        time.sleep(0.05)
+    raise AssertionError("job did not finish")
+
+
 class TestRest:
     def test_health_needs_no_auth(self, client: TestClient) -> None:
         assert client.get("/healthz").json()["ok"] is True
@@ -435,12 +445,18 @@ class TestDocumentsAndImport:
         assert client.post("/api/v1/documents", files={"file": ("y.txt", b"hi")},
                            headers=auth(r)).status_code == 403  # fmt: skip
 
-        report = client.post(
+        queued = client.post(
             "/api/v1/import",
             json={"text": f"{URL}\nhttp://192.168.0.1/", "tags": ["batch"]},
             headers=auth(w),
-        ).json()
-        assert len(report["created"]) == 1 and len(report["errors"]) == 1
+        )
+        assert queued.status_code == 202 and queued.json()["links"] == 2
+        job = wait_job(client, queued.json()["job_id"], r)
+        report = job["payload"]["report"]
+        assert job["status"] == "done" and "entries" not in job["payload"]
+        assert report["created"] == 1 and report["error_count"] == 1
+        assert "192.168.0.1" in report["errors"][0]
+        assert client.get("/api/v1/jobs/nope", headers=auth(r)).status_code == 404
 
     def test_ui_upload(self, client: TestClient, tokens: dict[str, str]) -> None:
         csrf = TestUi().login(client, tokens["write"])
@@ -455,7 +471,9 @@ class TestDocumentsAndImport:
         assert client.get("/add?tab=import").status_code == 200
         res = client.post("/import", data={"csrf": csrf, "text": URL}, follow_redirects=False)
         assert res.status_code == 303
-        assert "1 link(s) saved" in client.get(res.headers["location"]).text
+        assert "Importing 1 link(s) in the background." in client.get(res.headers["location"]).text
+        nothing = client.post("/import", data={"csrf": csrf, "text": "no links here"})
+        assert "no links found" in nothing.text
 
 
 class TestReviewRegressions:

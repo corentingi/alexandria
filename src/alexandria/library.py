@@ -429,28 +429,85 @@ class Library:
         project: str | None = None,
         created_by: str | None = None,
     ) -> ImportReport:
-        """Ingest every link in a plain list or a browser bookmarks export."""
+        """Ingest every link in a plain list or a browser bookmarks export, now (the CLI).
+        The UI and the API queue the same work as a job: ``start_url_import``."""
         report = ImportReport()
-        entries = parse_url_list(text)
-        if len(entries) > MAX_IMPORT:
-            report.errors.append(f"only the first {MAX_IMPORT} of {len(entries)} links imported")
-            entries = entries[:MAX_IMPORT]
-        for url, extra_tags, title in entries:
-            try:
-                result = await self.ingest(
-                    url,
-                    why=why,
-                    tags=[*(tags or []), *extra_tags],
-                    project=project,
-                    title=title,
-                    created_by=created_by,
-                )
-            except InvalidInput as exc:
-                report.errors.append(f"{url}: {exc}")
-                continue
-            target = report.duplicates if result.duplicate else report.created
-            target.append(result.resource.id)
+        entries = _capped_entries(text, report)
+        for entry in entries:
+            await self._import_entry(entry, why, tags, project, created_by, report)
         return report
+
+    def start_url_import(
+        self,
+        text: str,
+        why: str | None = None,
+        tags: list[str] | None = None,
+        project: str | None = None,
+        created_by: str | None = None,
+        name: str | None = None,
+    ) -> tuple[str, int]:
+        """Queue the import of every link in ``text``. Returns (job id, number of links).
+
+        Thousands of links take minutes (a DNS check and a write each): too long for one
+        HTTP request behind a proxy. The job records its position, so a restart resumes.
+        """
+        report = ImportReport()
+        entries = _capped_entries(text, report)
+        if not entries:
+            raise InvalidInput("no links found")
+        _scope(None, project)  # reject a bad project name now, not in the job
+        payload = {
+            "name": name or "pasted links", "entries": [list(e) for e in entries],
+            "why": why, "tags": tags or [], "project": project, "created_by": created_by,
+            "position": 0, "report": asdict(report),
+        }  # fmt: skip
+        return self._enqueue("import_urls", None, payload), len(entries)
+
+    async def _job_import_urls(self, job: Job) -> None:
+        payload = dict(job.payload)
+        entries = payload["entries"]
+        report = ImportReport(**payload["report"])
+        for position in range(int(payload["position"]), len(entries)):
+            url, tags, title = entries[position]
+            await self._import_entry(
+                (url, tags, title), payload["why"], payload["tags"], payload["project"],
+                payload["created_by"], report,
+            )  # fmt: skip
+            if position % 50 == 49:
+                payload |= {"position": position + 1, "report": asdict(report)}
+                self.index.set_job_payload(job.id, payload)
+        payload.pop("entries")
+        payload |= {
+            "links": len(entries), "position": len(entries),
+            "report": {"created": len(report.created), "duplicates": len(report.duplicates),
+                       "errors": report.errors[:50], "error_count": len(report.errors)},
+        }  # fmt: skip
+        self.index.set_job_payload(job.id, payload)
+
+    async def _import_entry(
+        self,
+        entry: tuple[str, list[str], str | None],
+        why: str | None,
+        tags: list[str] | None,
+        project: str | None,
+        created_by: str | None,
+        report: ImportReport,
+    ) -> None:
+        url, extra_tags, title = entry
+        try:
+            result = await self.ingest(
+                url, why=why, tags=[*(tags or []), *extra_tags], project=project, title=title,
+                created_by=created_by,
+            )  # fmt: skip
+        except InvalidInput as exc:
+            report.errors.append(f"{url}: {exc}")
+            return
+        except Exception as exc:  # one bad link must not stop the thousands after it
+            log.exception("import of %s failed", url)
+            report.errors.append(f"{url}: {type(exc).__name__}: {exc}")
+            return
+        target = report.duplicates if result.duplicate else report.created
+        target.append(result.resource.id)
 
     async def create_note(
         self,
@@ -698,6 +755,7 @@ class Library:
             "extract_attachment": self._job_extract_attachment,
             "export": self._job_export,
             "import_library": self._job_import_library,
+            "import_urls": self._job_import_urls,
         }
 
     def _enqueue(
@@ -1255,6 +1313,14 @@ def _scope(scope: Scope | None, project: str | None) -> tuple[Scope, str | None]
 
 
 _URL_IN_TEXT = re.compile(r"https?://[^\s<>\"']+")
+
+
+def _capped_entries(text: str, report: ImportReport) -> list[tuple[str, list[str], str | None]]:
+    entries = parse_url_list(text)
+    if len(entries) > MAX_IMPORT:
+        report.errors.append(f"only the first {MAX_IMPORT} of {len(entries)} links imported")
+        entries = entries[:MAX_IMPORT]
+    return entries
 
 
 def parse_url_list(text: str) -> list[tuple[str, list[str], str | None]]:

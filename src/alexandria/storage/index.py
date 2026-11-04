@@ -480,6 +480,14 @@ class Index:
             )
             return cur.rowcount
 
+    def set_job_payload(self, job_id: str, payload: dict[str, Any]) -> None:
+        """Progress and results of a long job (a link import's position and report)."""
+        with self.write() as db:
+            db.execute(
+                "UPDATE jobs SET payload = ?, updated_at = ? WHERE id = ?",
+                (json.dumps(payload), iso(utcnow()), job_id),
+            )
+
     def job(self, job_id: str) -> Job | None:
         with self.read() as db:
             row = db.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()

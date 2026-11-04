@@ -6,9 +6,11 @@
   <tbody>
   {% for j in jobs %}{% set row = rows.get(j.resource_id) %}
     <tr>
-      <td class="nowrap"><b>{{ {"fetch": ("Extract" if row and row.kind == "document" else "Fetch"), "attach_url": "Download attachment", "reindex_resource": "Re-index", "extract_attachment": "Extract attachment text", "export": "Export library", "import_library": "Import library"}.get(j.type, j.type) }}</b>
+      <td class="nowrap"><b>{{ {"fetch": ("Extract" if row and row.kind == "document" else "Fetch"), "attach_url": "Download attachment", "reindex_resource": "Re-index", "extract_attachment": "Extract attachment text", "export": "Export library", "import_library": "Import library", "import_urls": "Import links"}.get(j.type, j.type) }}</b>
         {% if j.payload.get("url") %}<div class="small muted">{{ j.payload.url | host }}</div>{% endif %}</td>
-      <td>{% if row %}<div class="row">{{ kind_icon(row.kind, 14) }}<a class="grow" href="/r/{{ row.slug }}">{{ row.title }}</a></div>{% elif j.type in ("export", "import_library") %}<a class="muted" href="/settings#library">{{ j.payload.get("name") or "whole library" }}</a>{% else %}<span class="muted">deleted</span>{% endif %}
+      <td>{% if row %}<div class="row">{{ kind_icon(row.kind, 14) }}<a class="grow" href="/r/{{ row.slug }}">{{ row.title }}</a></div>{% elif j.type in ("export", "import_library") %}<a class="muted" href="/settings#library">{{ j.payload.get("name") or "whole library" }}</a>{% elif j.type == "import_urls" %}{% set rep = j.payload.get("report") or {} %}<span class="muted">{{ j.payload.get("name") }}</span>
+          <div class="small muted">{% if j.status == "done" %}{{ rep.created }} saved, {{ rep.duplicates }} already there, {{ rep.error_count }} rejected{% else %}{{ j.payload.get("position", 0) }} of {{ (j.payload.get("entries") or [])|length }} links{% endif %}</div>
+          {% for e in (rep.errors or [])[:5] if j.status == "done" %}<div class="err">{{ e }}</div>{% endfor %}{% else %}<span class="muted">deleted</span>{% endif %}
         {% if j.error %}<div class="err">{{ j.error }}</div>{% endif %}</td>
       <td class="nowrap">
         {% if j.status == "done" %}<span class="badge ok">done</span>
