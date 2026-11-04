@@ -236,8 +236,10 @@ worker:
 
 ### 8.1 URL canonicalization and kind detection
 - Canonicalization: lowercase scheme and host; drop the fragment and default ports;
-  remove tracking parameters (`utm_*`, `fbclid`, `gclid`, `mc_cid`, `mc_eid`, `ref`);
-  sort the remaining query parameters; remove the trailing slash except on the root.
+  remove tracking parameters (`utm_*`, click ids such as `fbclid` and `gclid`, mailing
+  ids; see `urls.TRACKING_PARAMS`; not `ref`, which selects a branch or version on many
+  sites); sort the remaining query parameters by name, keeping the order of repeated
+  ones; remove the trailing slash except on the root.
 - `https://github.com/<owner>/<repo>[/...|.git]` → `git_repo` with `meta.forge: github`.
   Canonical form: `https://github.com/<owner>/<repo>`, lowercase.
 - Any other URL ending in `.git`, or an explicit `kind: git_repo` → generic `git_repo`.

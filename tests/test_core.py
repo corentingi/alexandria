@@ -25,8 +25,15 @@ from tests.conftest import PUBLIC_IP
 
 class TestCanonicalize:
     def test_tracking_params_fragment_port_and_trailing_slash(self) -> None:
-        url = "HTTPS://Example.COM:443/Path/?utm_source=x&b=2&a=1&fbclid=z&ref=hn#frag"
+        url = "HTTPS://Example.COM:443/Path/?utm_source=x&b=2&a=1&fbclid=z&ref_src=tw#frag"
         assert canonicalize(url) == "https://example.com/Path?a=1&b=2"
+
+    def test_parameters_that_select_content_are_kept(self) -> None:
+        a = canonicalize("https://gitlab.example/g/p/-/blob/x.md?ref=v1")
+        b = canonicalize("https://gitlab.example/g/p/-/blob/x.md?ref=v2")
+        assert a != b and a.endswith("?ref=v1")
+        assert canonicalize("https://x.example/?a=2&a=1") == "https://x.example/?a=2&a=1"
+        assert canonicalize("https://x.example/?b=1&a=2&a=1") == "https://x.example/?a=2&a=1&b=1"
 
     def test_root_keeps_its_slash(self) -> None:
         assert canonicalize("http://example.com") == "http://example.com/"

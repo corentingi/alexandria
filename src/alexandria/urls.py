@@ -8,7 +8,13 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from alexandria.models import Kind
 
-TRACKING_PARAMS = {"fbclid", "gclid", "mc_cid", "mc_eid", "ref"}
+# Only parameters that never select content. "ref" is not one: it is a branch or tag on
+# GitLab and GitHub, a version on many sites. Merging two different pages loses one of
+# them; keeping a tracking parameter only risks a duplicate, which the content hash flags.
+TRACKING_PARAMS = {
+    "fbclid", "gclid", "dclid", "msclkid", "yclid", "igshid", "mc_cid", "mc_eid",
+    "_hsenc", "_hsmi", "mkt_tok", "ref_src", "ref_url",
+}  # fmt: skip
 # Left in the address bar by bot checks (Reddit's JS challenge): never part of the page.
 CHALLENGE_PARAMS = {"js_challenge", "jsc_token", "jsc_orig_r", "solution"}
 _DEFAULT_PORTS = {"http": 80, "https": 443}
@@ -58,8 +64,10 @@ def canonicalize(url: str) -> str:
     drop = set(TRACKING_PARAMS)
     if any(k.lower() == "js_challenge" for k, _ in pairs):
         drop |= CHALLENGE_PARAMS
+    # Sorted by name only: repeated keys keep their order (?a=2&a=1 is not ?a=1&a=2).
     query = sorted(
-        (k, v) for k, v in pairs if not k.lower().startswith("utm_") and k.lower() not in drop
+        ((k, v) for k, v in pairs if not k.lower().startswith("utm_") and k.lower() not in drop),
+        key=lambda kv: kv[0],
     )
     path = parts.path or "/"
     if path != "/" and path.endswith("/"):
