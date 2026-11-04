@@ -60,6 +60,25 @@ def search_result(hit: SearchHit, row: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def resource_summary(r: Resource) -> dict[str, Any]:
+    """Who a resource is, in a few fields (lookup_url)."""
+    return _compact(
+        {
+            "id": r.id,
+            "slug": r.slug,
+            "kind": r.kind.value,
+            "title": r.title,
+            "url": r.canonical_url,
+            "why": r.why,
+            "tags": r.tags,
+            "status": r.status.value,
+            "fetch_status": r.fetch_status.value,
+            "project": r.project,
+            "captured_at": iso(r.captured_at),
+        }
+    )
+
+
 def resource_detail(
     resource: Resource, chunks: list[dict[str, Any]], full: bool = True
 ) -> dict[str, Any]:
@@ -152,7 +171,10 @@ def job_view(job: Job) -> dict[str, Any]:
             "attempts": job.attempts,
             "run_after": job.run_after if job.status == "queued" else None,
             "error": job.error,
-            "payload": job.payload,
+            # A queued link import carries its links (thousands): their count is enough.
+            "payload": job.payload | {"entries": len(job.payload["entries"])}
+            if isinstance(job.payload.get("entries"), list)
+            else job.payload,
             "created_at": job.created_at,
             "updated_at": job.updated_at,
         }

@@ -47,12 +47,13 @@ claude mcp add --transport http alexandria http://<host>:8080/mcp \
   --header "Authorization: Bearer <token>"
 ```
 
-Tools: `search`, `get_resource`, `get_content`, `list_recent`, `list_tags` (read);
-`ingest_url`, `create_note`, `update_resource`, `attach_url`, `refetch` (write). Fetched
-text is returned under `untrusted_content`.
+Tools: `search`, `get_resource`, `get_content`, `list_recent`, `list_tags`,
+`list_projects`, `lookup_url`, `get_job`, `list_jobs` (read); `ingest_url`, `create_note`,
+`update_resource`, `attach_url`, `refetch` (write). Fetched text is returned under
+`untrusted_content`.
 
 REST API at `/api/v1` (docs at `/api/docs`), including `POST /documents` (multipart) and
-`POST /import`. The UI's Settings page has a bookmarklet. CLI: `alexandria add <url>`,
+`POST /import` (queued as a job: follow it with `GET /jobs/{id}`). The UI's Settings page has a bookmarklet. CLI: `alexandria add <url>`,
 `alexandria upload <files…>`, `alexandria import <bookmarks.html>`, `alexandria note`.
 
 ## Restore a repository archive

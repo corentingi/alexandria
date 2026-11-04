@@ -347,7 +347,11 @@ Read scope:
 - `get_content(ref, chunk?, offset?, max_chars=8000)` → paginated text of the current
   snapshot's content.
 - `list_recent(limit=20, kind?, status?)`
-- `list_tags()`
+- `list_tags()`, `list_projects()`
+- `lookup_url(url)` → `{saved: false}` or `{saved: true, id, slug, why, status, …}`,
+  compared canonically; nothing is saved.
+- `get_job(job_id)`, `list_jobs(status?, limit=20)`: background work started by
+  `ingest_url` (which returns its `job_id`), `attach_url` and `refetch`.
 
 Write scope:
 - `ingest_url(url, why?, tags?, project?, scope?)`

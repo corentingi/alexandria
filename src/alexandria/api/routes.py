@@ -14,7 +14,7 @@ from alexandria.context import AppContext
 from alexandria.library import NotFound, Update
 from alexandria.models import Kind, Scope, Status
 from alexandria.storage.index import SearchFilters
-from alexandria.views import job_view, resource_detail, search_result
+from alexandria.views import job_view, resource_detail, resource_summary, search_result
 from alexandria.walls import site_warning
 
 router = APIRouter(prefix="/api/v1")
@@ -109,6 +109,7 @@ async def ingest(body: IngestBody, c: Ctx, who: Writer) -> JSONResponse:
         "status": r.status.value,
         "fetch_status": r.fetch_status.value,
         "duplicate": result.duplicate,
+        **({"job_id": result.job_id} if result.job_id else {}),
         **({"added": result.added} if result.added else {}),
     }
     if warning := site_warning(r.canonical_url or body.url):
@@ -295,6 +296,18 @@ async def tags(c: Ctx, _: Reader) -> dict[str, Any]:
 @router.get("/jobs")
 async def jobs(c: Ctx, _: Reader, status: str | None = None, limit: int = 100) -> dict[str, Any]:
     return {"jobs": [job_view(j) for j in c.library.index.jobs(status, limit=limit)]}
+
+
+@router.get("/lookup")
+async def lookup(c: Ctx, _: Reader, url: str) -> dict[str, Any]:
+    """Whether a URL is already saved (compared canonically), without saving it."""
+    found = c.library.lookup_url(url)
+    return {"saved": True, **resource_summary(found)} if found else {"saved": False}
+
+
+@router.get("/projects")
+async def projects(c: Ctx, _: Reader) -> dict[str, Any]:
+    return {"projects": {p: n for p, n in c.library.projects()}}
 
 
 @router.get("/jobs/{job_id}")

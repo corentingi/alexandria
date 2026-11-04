@@ -160,8 +160,14 @@ class TestMcp:
             "update_resource",
             "attach_url",
             "refetch",
+            "list_projects",
+            "lookup_url",
+            "get_job",
+            "list_jobs",
         }
         assert not names & {"delete", "reindex"}
+        unsaved = tool(client, r, "lookup_url", url=URL)["structuredContent"]
+        assert unsaved == {"saved": False}
 
         denied = tool(client, r, "ingest_url", url=URL)
         assert denied["isError"] is True and "write scope" in denied["content"][0]["text"]
@@ -169,6 +175,13 @@ class TestMcp:
         made = tool(client, w, "ingest_url", url=URL, why="an essay", tags=["books"])
         rid = made["structuredContent"]["id"]
         wait_ready(client, rid, r)
+        job = tool(client, r, "get_job", job_id=made["structuredContent"]["job_id"])
+        assert job["structuredContent"]["status"] == "done"
+        assert tool(client, r, "get_job", job_id="nope")["isError"] is True
+        listed = tool(client, r, "list_jobs", status="done")["structuredContent"]["jobs"]
+        assert [j["resource_id"] for j in listed] == [rid]
+        saved = tool(client, r, "lookup_url", url=URL + "?utm_source=x#top")["structuredContent"]
+        assert saved["saved"] is True and saved["id"] == rid and saved["why"] == "an essay"
 
         hits = tool(client, r, "search", query="papyrus")["structuredContent"]["results"]
         assert hits[0]["id"] == rid and "untrusted_snippet" in hits[0]
@@ -183,6 +196,12 @@ class TestMcp:
         upd = tool(client, w, "update_resource", ref=note["slug"], why="for later")
         assert upd["structuredContent"]["status"] == "kept"
         assert tool(client, r, "list_tags")["structuredContent"]["tags"] == {"books": 1}
+        tool(client, w, "create_note", title="Plan", body="x", project="garden")
+        projects = tool(client, r, "list_projects")["structuredContent"]["projects"]
+        assert projects == {"garden": 1}
+        rest = client.get("/api/v1/lookup", params={"url": URL}, headers=auth(r)).json()
+        assert rest["saved"] is True and rest["id"] == rid
+        assert client.get("/api/v1/projects", headers=auth(r)).json() == {"projects": {"garden": 1}}
 
 
 class TestUi:

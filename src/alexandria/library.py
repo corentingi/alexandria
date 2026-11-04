@@ -188,6 +188,18 @@ class Library:
     def tags(self) -> list[tuple[str, int]]:
         return self.index.list_tags()
 
+    def projects(self) -> list[tuple[str, int]]:
+        return self.index.list_projects()
+
+    def lookup_url(self, url: str) -> Resource | None:
+        """The resource saved for ``url`` (compared canonically), without saving anything."""
+        try:
+            canonical = detect(url).canonical_url
+        except InvalidURL as exc:
+            raise InvalidInput(str(exc)) from exc
+        found = self.index.find_by_canonical_url(canonical)
+        return self.files.read(found) if found else None
+
     def text(self, resource: Resource) -> tuple[str, str | None]:
         """Full text of the current content and the role it came from.
 

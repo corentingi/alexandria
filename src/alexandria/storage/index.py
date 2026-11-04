@@ -320,6 +320,16 @@ class Index:
                 )
             ]
 
+    def list_projects(self) -> list[tuple[str, int]]:
+        with self.read() as db:
+            return [
+                (r["project"], r["n"])
+                for r in db.execute(
+                    "SELECT project, count(*) AS n FROM resources WHERE project IS NOT NULL "
+                    "GROUP BY project ORDER BY n DESC, project"
+                )
+            ]
+
     def counts(self) -> dict[str, int]:
         with self.read() as db:
             rows = db.execute("SELECT status, count(*) AS n FROM resources GROUP BY status")
