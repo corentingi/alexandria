@@ -17,7 +17,13 @@ from typing import Annotated, Any
 from urllib.parse import quote, urlencode, urlsplit
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    PlainTextResponse,
+    RedirectResponse,
+    Response,
+)
 from fastapi.templating import Jinja2Templates
 from itsdangerous import BadSignature, URLSafeSerializer
 from markdown_it import MarkdownIt
@@ -166,6 +172,14 @@ def back(url: str, notice: str | None = None, error: str | None = None) -> Redir
     if params:
         path += ("&" if "?" in path else "?") + urlencode(params)
     return RedirectResponse(path + hash_ + fragment, status_code=303)
+
+
+def _failed(request: Request, exc: Exception, url: str) -> Response:
+    """An action that failed. For htmx, plain text the page shows as a message; a redirect
+    would be followed and the whole page swapped into the card."""
+    if request.headers.get("hx-request"):
+        return PlainTextResponse(str(exc), status_code=400)
+    return back(url, error=str(exc))
 
 
 def _https(request: Request) -> bool:
@@ -372,7 +386,7 @@ async def set_why(
     try:
         resource = await c.library.update(ref, Update(why=why))
     except InvalidInput as exc:
-        return back(f"/r/{ref}", error=str(exc))
+        return _failed(request, exc, f"/r/{ref}")
     if request.headers.get("hx-request"):
         return render(request, "_inbox_done.html", r=resource)
     return back(f"/r/{resource.slug}", notice="Reason saved.")
@@ -653,7 +667,7 @@ async def set_status(
     try:
         resource = await c.library.update(ref, Update(status=status))
     except InvalidInput as exc:
-        return back(f"/r/{ref}", error=str(exc))
+        return _failed(request, exc, f"/r/{ref}")
     if request.headers.get("hx-request"):  # triage in the inbox: the card is replaced
         return render(request, "_inbox_done.html", r=resource)
     if back_to == "inbox":  # the same, without JavaScript

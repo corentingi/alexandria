@@ -200,6 +200,19 @@ class TestUi:
         bad = client.post("/login", data={"token": "nope"})
         assert bad.status_code == 401
 
+    def test_htmx_failures_are_plain_messages(
+        self, client: TestClient, tokens: dict[str, str]
+    ) -> None:
+        csrf = self.login(client, tokens["write"])
+        made = client.post("/api/v1/notes", json={"title": "Alpha", "body": "x"},
+                           headers=auth(tokens["write"])).json()  # fmt: skip
+        res = client.post(f"/r/{made['id']}/status/kept", data={"csrf": csrf},
+                          headers={"HX-Request": "true"})  # fmt: skip
+        assert res.status_code == 400 and res.headers["content-type"].startswith("text/plain")
+        assert "needs a 'why'" in res.text and "<html" not in res.text
+        js = client.get("/static/app.js").text
+        assert "htmx:responseError" in js and "htmx:sendError" in js
+
     def test_read_token_sees_no_write_controls(
         self, client: TestClient, tokens: dict[str, str]
     ) -> None:

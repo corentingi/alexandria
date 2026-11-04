@@ -164,6 +164,7 @@ section.card + section.card { margin-top: 16px; }
 .notice.ok { background: var(--ok-soft); color: var(--ok); border-color: transparent; }
 .notice.bad { background: var(--bad-soft); color: var(--bad); border-color: transparent; }
 .notice.warn { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
+.toast { position: fixed; right: 16px; bottom: 16px; left: 16px; max-width: 420px; margin: 0 0 0 auto; z-index: 50; box-shadow: var(--shadow); }
 
 /* ---- badges ----------------------------------------------------------------- */
 .badge {

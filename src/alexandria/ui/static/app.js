@@ -8,6 +8,32 @@
     if (meta) event.detail.headers["X-CSRF-Token"] = meta.content;
   });
 
+  // htmx does not swap error responses, so a failed Keep or Archive did nothing visible.
+  // Say what happened instead: the server's own words when it sends plain text.
+  function toast(message) {
+    var box = document.createElement("div");
+    box.className = "notice bad toast";
+    box.setAttribute("role", "alert");
+    box.textContent = message;
+    document.body.appendChild(box);
+    setTimeout(function () { box.remove(); }, 7000);
+  }
+  var STATUS_TEXT = {
+    401: "Your session has ended: sign in again.",
+    403: "Not allowed. Your session may have expired: reload the page.",
+    404: "Not found: it may have been deleted. Reload the page.",
+    413: "That is too large."
+  };
+  document.addEventListener("htmx:responseError", function (event) {
+    var xhr = event.detail.xhr;
+    var plain = (xhr.getResponseHeader("content-type") || "").indexOf("text/plain") === 0;
+    toast(plain && xhr.responseText ? xhr.responseText.slice(0, 300)
+      : STATUS_TEXT[xhr.status] || "Something went wrong (HTTP " + xhr.status + "). Try again.");
+  });
+  document.addEventListener("htmx:sendError", function () {
+    toast("Cannot reach the server. Check the connection and try again.");
+  });
+
   // "/" focuses the search box, Escape leaves it.
   document.addEventListener("keydown", function (event) {
     var target = event.target;
