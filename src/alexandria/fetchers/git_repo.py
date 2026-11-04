@@ -37,7 +37,13 @@ log = logging.getLogger(__name__)
 
 ARCHIVE_NAME = "repository.git.tar.gz"
 _README_NAMES = ("readme.md", "readme.markdown", "readme.rst", "readme.txt", "readme")
-_NOT_FOUND_MARKERS = ("repository not found", "not found", "does not appear to be a git")
+# Failures a retry cannot fix: a missing repository, or one that needs credentials
+# (git never prompts here; a private repository answers with an auth error).
+_NOT_FOUND_MARKERS = (
+    "repository not found", "not found", "does not appear to be a git",
+    "authentication failed", "could not read username", "terminal prompts disabled",
+    "the requested url returned error: 401", "the requested url returned error: 403",
+)  # fmt: skip
 
 
 @dataclass

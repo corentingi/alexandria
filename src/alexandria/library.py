@@ -612,15 +612,30 @@ class Library:
         resource = self.get(ref)
         if resource.kind == Kind.NOTE:
             raise InvalidInput("a note has no source to re-fetch")
-        if self.index.pending_jobs(resource.id, "fetch"):
-            raise InvalidInput("a fetch is already queued or running for this resource")
         async with self.lock(resource.id):
+            # Checked and queued under the lock: two quick clicks must not queue two
+            # fetches that would install two snapshots side by side.
+            if self.index.pending_jobs(resource.id, "fetch"):
+                raise InvalidInput("a fetch is already queued or running for this resource")
             resource = self.files.read(resource.id)
             resource.fetch_status = FetchStatus.PENDING
             resource.fetch_error = None
             self.files.write(resource)
             self.index.upsert(resource, None)
-        return self._enqueue("fetch", resource.id)
+            return self._enqueue("fetch", resource.id)
+
+    async def retry_job(self, job_id: str) -> Job | None:
+        """Queue a failed job again. ``None``: no failed job with this id. A fetch is not
+        retried while another fetch of the same resource is pending (a refetch since)."""
+        job = self.index.job(job_id)
+        if job is None or job.status != "failed":
+            return None
+        if job.type == "fetch" and job.resource_id:
+            async with self.lock(job.resource_id):
+                if self.index.pending_jobs(job.resource_id, "fetch"):
+                    raise InvalidInput("a fetch of this resource is already queued or running")
+                return self.index.retry_job(job_id)
+        return self.index.retry_job(job_id)
 
     async def attach_upload(
         self,
@@ -1325,7 +1340,7 @@ def _scope(scope: Scope | None, project: str | None) -> tuple[Scope, str | None]
     if scope == Scope.PROJECT and not project:
         raise InvalidInput("scope 'project' needs a project name")
     if scope == Scope.GLOBAL:
-        project = None if project is None else project
+        project = None  # global means in no project (design §5: scope global, project null)
     return scope, project
 
 

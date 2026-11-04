@@ -45,7 +45,9 @@ class Fetcher(Protocol):
     async def fetch(self, resource: Resource, staging_dir: Path) -> SnapshotResult: ...
 
 
-_PERMANENT_STATUS = {400, 401, 403, 404, 405, 410, 414, 451}
+# Client errors will not change on retry, except these: a timeout, "too early" and
+# "too many requests" are worth another try later.
+_RETRYABLE_4XX = {408, 425, 429}
 _SELECTED_HEADERS = (
     "content-type", "content-length", "last-modified", "etag", "server", "content-language",
     "content-disposition",
@@ -171,6 +173,8 @@ async def _download(
                 raise FetchError(f"timeout fetching {current}") from exc
             except httpx.TransportError as exc:
                 raise FetchError(f"network error fetching {current}: {exc}") from exc
+            except httpx.HTTPError as exc:  # e.g. a corrupt gzip body (DecodingError)
+                raise FetchError(f"bad response from {current}: {exc}") from exc
         raise PermanentFetchError(f"more than {settings.fetch.max_redirects} redirects")
     except BaseException:
         dest.unlink(missing_ok=True)
@@ -187,6 +191,6 @@ def _raise_for_status(response: httpx.Response) -> None:
     message = f"HTTP {code} from {response.url}"
     if code in (401, 403, 429) and (warning := site_warning(str(response.url))):
         message = f"{message}: {warning.message.split('. ', 1)[0]}. {AFTER_TIP}"
-    if code in _PERMANENT_STATUS:
+    if 400 <= code < 500 and code not in _RETRYABLE_4XX:
         raise PermanentFetchError(message)
     raise FetchError(message)

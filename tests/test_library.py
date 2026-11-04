@@ -12,7 +12,7 @@ import respx
 
 from alexandria.jobs import Worker
 from alexandria.library import InvalidInput, Library, NotFound, Update
-from alexandria.models import FetchStatus, Kind, Status
+from alexandria.models import FetchStatus, Kind, Scope, Status
 from alexandria.storage.index import Index, SearchFilters
 from tests.conftest import ARTICLE_HTML
 
@@ -632,3 +632,79 @@ class TestJobTable:
         library.startup()
         assert {j.id for j in library.index.jobs(limit=10)} == {"j1", "j2"}  # failed stays
         assert library.index.job_counts() == {"failed": 1, "done": 1}
+
+
+class TestSmallFixes:
+    async def test_two_quick_refetches_queue_one_fetch(
+        self, library: Library, worker: Worker
+    ) -> None:
+        rid = await ingest_article(library, worker)
+        async with library.lock(rid):  # busy, as while an export copies the resource
+            tasks = [asyncio.create_task(library.refetch(rid)) for _ in range(2)]
+            await asyncio.sleep(0.01)  # both are now waiting for the lock
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        assert sum(isinstance(r, str) for r in results) == 1
+        assert sum(isinstance(r, InvalidInput) for r in results) == 1
+        assert library.index.pending_jobs(rid, "fetch") == 1
+
+    async def test_retry_waits_for_a_pending_fetch(self, library: Library, worker: Worker) -> None:
+        with respx.mock() as router:
+            router.get(ARTICLE_URL).mock(return_value=httpx.Response(404))
+            result = await library.ingest(ARTICLE_URL, why="x")
+            await worker.drain()
+        failed = library.index.jobs("failed")[0]
+        await library.refetch(result.resource.id)
+        with pytest.raises(InvalidInput, match="already queued"):
+            await library.retry_job(failed.id)
+        assert await library.retry_job("no-such-job") is None
+
+    @pytest.mark.parametrize(("code", "retried"), [(406, False), (422, False), (429, True)])
+    async def test_client_errors_are_permanent_but_rate_limits(
+        self, library: Library, worker: Worker, code: int, retried: bool
+    ) -> None:
+        with respx.mock() as router:
+            router.get(ARTICLE_URL).mock(return_value=httpx.Response(code))
+            await library.ingest(ARTICLE_URL, why="x")
+            await worker.drain()
+        [job] = library.index.jobs("failed")
+        assert job.attempts == (library.settings.worker.max_attempts if retried else 1)
+
+    async def test_git_auth_failure_is_permanent(
+        self, library: Library, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from alexandria.fetchers import git_repo
+
+        class Proc:
+            returncode = 128
+
+            async def communicate(self) -> tuple[bytes, bytes]:
+                return b"", b"fatal: Authentication failed for 'https://github.com/a/b.git/'"
+
+        async def fake_exec(*args: object, **kwargs: object) -> Proc:
+            return Proc()
+
+        monkeypatch.setattr(git_repo.asyncio, "create_subprocess_exec", fake_exec)
+        with pytest.raises(git_repo.GitError) as caught:
+            await library.fetchers[Kind.GIT_REPO]._git(["clone", "x", "y"])  # type: ignore[attr-defined]
+        assert caught.value.permanent
+
+    async def test_global_scope_leaves_the_project(self, library: Library) -> None:
+        note = await library.create_note("Plan", "x", project="garden")
+        assert note.project == "garden"
+        updated = await library.update(note.id, Update(scope=Scope.GLOBAL))
+        assert updated.scope == Scope.GLOBAL and updated.project is None
+
+    def test_token_revocation_seen_with_the_same_mtime(self, tmp_path: Path) -> None:
+        import os
+
+        from alexandria.auth import ScopeLevel, TokenStore
+
+        store = TokenStore(tmp_path / "tokens.yaml")
+        secret = store.create("agent", ScopeLevel.WRITE)
+        store.create("other", ScopeLevel.READ)
+        assert store.verify(secret) is not None
+        before = (tmp_path / "tokens.yaml").stat()
+        other = TokenStore(tmp_path / "tokens.yaml")  # another process (the CLI)
+        other.revoke("agent")
+        os.utime(tmp_path / "tokens.yaml", ns=(before.st_atime_ns, before.st_mtime_ns))
+        assert store.verify(secret) is None

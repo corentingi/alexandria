@@ -320,7 +320,7 @@ async def job(job_id: str, c: Ctx, _: Reader) -> dict[str, Any]:
 
 @router.post("/jobs/{job_id}/retry")
 async def retry_job(job_id: str, c: Ctx, _: Writer) -> dict[str, Any]:
-    job = c.library.index.retry_job(job_id)
+    job = await c.library.retry_job(job_id)
     if job is None:
         raise HTTPException(404, "no failed job with this id")
     c.enqueued()

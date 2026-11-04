@@ -58,13 +58,16 @@ class TokenStore:
     def __init__(self, path: Path) -> None:
         self.path = path
         self._lock = threading.Lock()
-        self._mtime: float | None = None
+        # Identity of the file last read. mtime alone can miss a change on filesystems
+        # with coarse timestamps (some NAS mounts); a replace always changes the inode.
+        self._mtime: tuple[int, int, int] | None = None
         self._tokens: list[dict[str, Any]] = []
 
     def _load(self) -> list[dict[str, Any]]:
         with self._lock:
             try:
-                mtime = self.path.stat().st_mtime
+                st = self.path.stat()
+                mtime = (st.st_ino, st.st_mtime_ns, st.st_size)
             except FileNotFoundError:
                 self._tokens, self._mtime = [], None
                 return []

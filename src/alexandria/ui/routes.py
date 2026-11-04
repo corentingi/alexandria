@@ -838,7 +838,10 @@ def _capture_chart(c: AppContext) -> dict[str, Any]:
 @router.post("/jobs/{job_id}/retry", dependencies=[Csrf])
 async def retry(c: Ctx, who: User, job_id: str) -> Response:
     need(who, ScopeLevel.WRITE)
-    job = c.library.index.retry_job(job_id)
+    try:
+        job = await c.library.retry_job(job_id)
+    except InvalidInput as exc:
+        return back("/activity", error=str(exc))
     c.enqueued()
     return back("/activity", notice="Job re-queued." if job else None,
                 error=None if job else "That job is not failed.")  # fmt: skip
