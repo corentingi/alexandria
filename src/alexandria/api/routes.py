@@ -109,6 +109,7 @@ async def ingest(body: IngestBody, c: Ctx, who: Writer) -> JSONResponse:
         "status": r.status.value,
         "fetch_status": r.fetch_status.value,
         "duplicate": result.duplicate,
+        **({"added": result.added} if result.added else {}),
     }
     if warning := site_warning(r.canonical_url or body.url):
         payload["warning"] = warning.message

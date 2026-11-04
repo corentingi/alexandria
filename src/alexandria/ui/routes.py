@@ -28,7 +28,7 @@ from alexandria import __version__
 from alexandria.auth import Principal, ScopeLevel, TokenStore
 from alexandria.context import AppContext
 from alexandria.extract import detect_format
-from alexandria.library import InvalidInput, NotFound, Update
+from alexandria.library import IngestResult, InvalidInput, NotFound, Update
 from alexandria.models import Kind, Resource, Status, iso
 from alexandria.storage.index import HL_END, HL_START, SearchFilters
 from alexandria.views import plain_snippet
@@ -424,9 +424,18 @@ async def add(
         return render(request, "add.html", code=400, url=url, title=title, why=why, tags=tags,
                       project=project, tab="url", error=str(exc))  # fmt: skip
     c.enqueued()
-    notice = "Already in the library." if result.duplicate else "Saved. Fetching in the background…"
+    notice = _saved_notice(result)
     # By id: an article's slug may still change once its title is extracted (ADR-0008).
     return back(f"/r/{result.resource.id}", notice=notice)
+
+
+def _saved_notice(result: IngestResult) -> str:
+    if not result.duplicate:
+        return "Saved. Fetching in the background…"
+    added = {"why": "your reason", "tags": "your tags"}
+    if result.added:
+        return f"Already in the library: {' and '.join(added[a] for a in result.added)} added."
+    return "Already in the library."
 
 
 @router.post("/notes/new", dependencies=[Csrf])
@@ -465,7 +474,7 @@ async def upload(
     files = [f for f in form.getlist("files") if isinstance(f, StarletteUpload) and f.filename]
     if not files:
         return back("/add?tab=file", error="Choose at least one file.")
-    saved, duplicates, errors = [], 0, []
+    saved, duplicates, errors, last = [], 0, [], None
     for file in files:
         try:
             result = await c.library.ingest_file(
@@ -478,9 +487,10 @@ async def upload(
             continue
         duplicates += result.duplicate
         saved.append(result.resource)
+        last = result
     c.enqueued()
-    if len(saved) == 1 and not errors:
-        note = "Already in the library." if duplicates else "Saved. Extracting text…"
+    if len(saved) == 1 and not errors and last is not None:
+        note = _saved_notice(last) if duplicates else "Saved. Extracting text…"
         return back(f"/r/{saved[0].id}", notice=note)
     notice = f"{len(saved) - duplicates} document(s) saved, {duplicates} already there."
     return back("/activity", notice=notice, error="; ".join(errors) or None)

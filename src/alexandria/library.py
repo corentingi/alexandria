@@ -61,7 +61,7 @@ from alexandria.transfer import (
     LibraryImportReport,
     unpack,
 )
-from alexandria.urls import InvalidURL, detect
+from alexandria.urls import Detected, InvalidURL, detect
 
 log = logging.getLogger(__name__)
 
@@ -90,6 +90,8 @@ class IngestResult:
     resource: Resource
     duplicate: bool
     job_id: str | None = None
+    # For a duplicate: what the request added to the existing resource ("why", "tags").
+    added: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -284,39 +286,70 @@ class Library:
         await self._guard(detected.canonical_url)
         async with self._ingest_lock:
             existing = self.index.find_by_canonical_url(detected.canonical_url)
-            if existing is not None:
-                return IngestResult(self.files.read(existing), duplicate=True)
-            now = utcnow()
-            resource_id = new_id()
-            if detected.forge == "github":
-                base_title = f"{detected.owner}/{detected.repo}"
-                slug_base = f"{detected.owner}-{detected.repo}"
-            else:
-                base_title = (title or "").strip() or _title_from_url(detected.canonical_url)
-                slug_base = base_title
-            scope, project = _scope(scope, project)
-            resource = Resource(
-                id=resource_id,
-                slug=unique_slug(slug_base, self.index.slug_taken),
-                kind=detected.kind,
-                title=base_title,
-                title_source=TitleSource.URL,
-                source_url=url.strip(),
-                canonical_url=detected.canonical_url,
-                why=why,
-                tags=tags or [],
-                scope=scope,
-                project=project,
-                fetch_status=FetchStatus.PENDING,
-                captured_at=now,
-                updated_at=now,
-                created_by=created_by,
-                meta={"forge": detected.forge} if detected.forge else {},
-            )
-            resource.status = Status.KEPT if resource.why else Status.INBOX
-            self.files.write(resource)
-            self.index.upsert(resource, [])
-            job_id = self._enqueue("fetch", resource.id)
+            if existing is None:
+                return self._create_from_url(detected, url, why, tags, scope, project, title,
+                                             created_by)  # fmt: skip
+        return await self._add_to_existing(existing, why, tags)
+
+    async def _add_to_existing(
+        self, resource_id: str, why: str | None, tags: list[str] | None
+    ) -> IngestResult:
+        """Saving something already saved: the reason and tags typed are not lost. A missing
+        ``why`` is filled in (an existing one is never replaced) and new tags are added."""
+        resource = self.files.read(resource_id)
+        changes, added = Update(), []
+        if why and why.strip() and not resource.why:
+            changes.why, added = why, ["why"]
+        new_tags = [t for t in normalize_tags(tags or []) if t not in resource.tags]
+        if new_tags:
+            changes.tags, added = [*resource.tags, *new_tags], [*added, "tags"]
+        if added:
+            resource = await self.update(resource_id, changes)
+        return IngestResult(resource, duplicate=True, added=added)
+
+    def _create_from_url(
+        self,
+        detected: Detected,
+        url: str,
+        why: str | None,
+        tags: list[str] | None,
+        scope: Scope | None,
+        project: str | None,
+        title: str | None,
+        created_by: str | None,
+    ) -> IngestResult:
+        """Caller holds ``_ingest_lock``. Synchronous: no other task runs in between."""
+        now = utcnow()
+        resource_id = new_id()
+        if detected.forge == "github":
+            base_title = f"{detected.owner}/{detected.repo}"
+            slug_base = f"{detected.owner}-{detected.repo}"
+        else:
+            base_title = (title or "").strip() or _title_from_url(detected.canonical_url)
+            slug_base = base_title
+        scope, project = _scope(scope, project)
+        resource = Resource(
+            id=resource_id,
+            slug=unique_slug(slug_base, self.index.slug_taken),
+            kind=detected.kind,
+            title=base_title,
+            title_source=TitleSource.URL,
+            source_url=url.strip(),
+            canonical_url=detected.canonical_url,
+            why=why,
+            tags=tags or [],
+            scope=scope,
+            project=project,
+            fetch_status=FetchStatus.PENDING,
+            captured_at=now,
+            updated_at=now,
+            created_by=created_by,
+            meta={"forge": detected.forge} if detected.forge else {},
+        )
+        resource.status = Status.KEPT if resource.why else Status.INBOX
+        self.files.write(resource)
+        self.index.upsert(resource, [])
+        job_id = self._enqueue("fetch", resource.id)
         return IngestResult(resource, duplicate=False, job_id=job_id)
 
     async def ingest_file(
@@ -350,7 +383,7 @@ class Library:
             async with self._ingest_lock:
                 existing = self.index.find_by_canonical_url(canonical)
                 if existing is not None:
-                    return IngestResult(self.files.read(existing), duplicate=True)
+                    return await self._add_to_existing(existing, why, tags)
                 now = utcnow()
                 name = sanitize_filename(filename, default="document")
                 title = _title_from_filename(filename)

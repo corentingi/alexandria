@@ -173,7 +173,8 @@ def build_mcp(ctx: AppContext) -> MCPServer[Any]:
 
         GitHub URLs (and URLs ending in .git) are archived as git repositories, anything else
         as an article. If the URL is already saved, returns the existing resource with
-        duplicate=true and changes nothing. Always give `why`. A `warning` means the site
+        duplicate=true; your `why` is used only if it had none (`added` lists what was
+        added: "why", "tags"). Always give `why`. A `warning` means the site
         usually blocks fetches or needs a login: tell the user, who can attach a PDF of the
         page; or save the text yourself with create_note if you already have it.
         """
@@ -190,6 +191,7 @@ def build_mcp(ctx: AppContext) -> MCPServer[Any]:
             "status": r.status.value,
             "fetch_status": r.fetch_status.value,
             "duplicate": result.duplicate,
+            **({"added": result.added} if result.added else {}),
             **({"warning": w.message} if (w := site_warning(r.canonical_url or url)) else {}),
         }
 

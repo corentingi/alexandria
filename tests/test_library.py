@@ -69,6 +69,17 @@ class TestArticle:
         assert again.resource.id == rid
         assert again.resource.why == "testing"  # never overwritten
 
+    async def test_saving_again_adds_why_and_tags(self, library: Library, worker: Worker) -> None:
+        rid = await ingest_article(library, worker, why=None)
+        again = await library.ingest(ARTICLE_URL, why="cited in the report", tags=["Reports"])
+        assert again.duplicate and again.added == ["why", "tags"]
+        res = library.get(rid)
+        assert res.why == "cited in the report" and res.status == Status.KEPT
+        assert res.tags == ["books", "history", "reports"]
+
+        other = await library.ingest(ARTICLE_URL, why="something else", tags=["history"])
+        assert other.added == [] and library.get(rid).why == "cited in the report"
+
     async def test_ssrf_rejected(self, library: Library) -> None:
         for url in ("http://192.168.1.1/", "http://localhost/", "http://intranet.example/x"):
             with pytest.raises(InvalidInput, match="SSRF"):

@@ -203,6 +203,9 @@ class TestUi:
         assert client.get(slug_page).status_code == 200
         inbox = client.get("/inbox").text
         assert "Why keep this?" in inbox
+        again = client.post("/add", data={"url": URL, "csrf": csrf, "why": "for the talk"})
+        assert "Already in the library: your reason added." in again.text
+        client.post(f"/r/{again.url.path.split('/')[-1]}/why", data={"why": "", "csrf": csrf})
 
         rid = client.get("/api/v1/search", headers=auth(tokens["read"])).json()["results"][0]["id"]
         wait_ready(client, rid, tokens["read"])
