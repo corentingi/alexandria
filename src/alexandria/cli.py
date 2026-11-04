@@ -100,13 +100,22 @@ def add(
             return
         typer.echo(f"Saved {r.slug} ({r.id}), status {r.status.value}; fetch queued.")
         if now:
-            from alexandria.jobs import Worker
-
-            await Worker(library).drain(timeout=library.settings.git.clone_timeout_s * 2)
+            await _run_now(library, [result.job_id], library.settings.git.clone_timeout_s * 2)
             r = library.get(r.id)
             typer.echo(f"fetch: {r.fetch_status.value} {r.fetch_error or ''}".rstrip())
 
     asyncio.run(run())
+
+
+async def _run_now(library: Library, job_ids: list[str | None], timeout: float) -> None:
+    """Run these jobs in this process. Other queued jobs are left to the server."""
+    from alexandria.jobs import Worker
+
+    try:
+        await Worker(library).drain(timeout=timeout, only={j for j in job_ids if j})
+    except TimeoutError:
+        typer.secho("Still running after the time limit; queued again for the server.",
+                    fg="yellow", err=True)  # fmt: skip
 
 
 @app.command()
@@ -127,6 +136,7 @@ def upload(
                 yield block
 
     async def run() -> None:
+        jobs: list[str | None] = []
         for path in files:
             if not path.is_file():
                 typer.secho(f"skipped {path}: not a file", fg="yellow", err=True)
@@ -141,10 +151,9 @@ def upload(
                 continue
             word = "Already saved" if result.duplicate else "Saved"
             typer.echo(f"{word}: {result.resource.slug} ({result.resource.id})")
+            jobs.append(result.job_id)
         if now:
-            from alexandria.jobs import Worker
-
-            await Worker(library).drain(timeout=3600)
+            await _run_now(library, jobs, 3600)
 
     asyncio.run(run())
 

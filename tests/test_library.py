@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import subprocess
 import tarfile
 from pathlib import Path
@@ -501,3 +502,30 @@ class TestReviewRegressions:
             (c["heading_path"], c["text"]) for c in after
         ]
         assert before[0]["heading_path"] == "Title"
+
+
+class TestInterruptedJobs:
+    async def test_cancelled_fetch_is_requeued_not_failed(
+        self, library: Library, worker: Worker, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        async def hang(*args: object) -> None:
+            await asyncio.sleep(60)
+
+        monkeypatch.setattr(library.fetchers[Kind.ARTICLE], "fetch", hang)
+        result = await library.ingest(ARTICLE_URL, why="x")
+        with pytest.raises(TimeoutError):
+            await worker.drain(timeout=0.2)
+        job = library.index.job(result.job_id or "")
+        assert job is not None and job.status == "queued" and job.attempts == 0
+        res = library.get(result.resource.id)
+        assert res.fetch_status == FetchStatus.PENDING and res.fetch_error is None
+
+    async def test_drain_only_runs_the_given_jobs(self, library: Library, worker: Worker) -> None:
+        with respx.mock(assert_all_called=False) as router:
+            mock_article(router)
+            mine = await library.ingest(ARTICLE_URL, why="x")
+            other = await library.ingest("https://other.example/post", why="y")
+            await worker.drain(only={mine.job_id or ""})
+        assert library.get(mine.resource.id).fetch_status == FetchStatus.READY
+        job = library.index.job(other.job_id or "")
+        assert job is not None and job.status == "queued"

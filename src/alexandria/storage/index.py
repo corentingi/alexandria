@@ -11,7 +11,7 @@ import json
 import re
 import sqlite3
 import threading
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Collection, Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -408,16 +408,32 @@ class Index:
                 ),
             )
 
-    def claim_job(self) -> Job | None:
+    def claim_job(self, only: Collection[str] | None = None) -> Job | None:
+        """Claim the next due job; with ``only``, the next due job among these ids."""
         now = iso(utcnow())
+        among, params = "", [now, now]
+        if only is not None:
+            if not only:
+                return None
+            among = f"AND id IN ({','.join('?' * len(only))}) "
+            params = [now, now, *only]
         with self.write() as db:
             row = db.execute(
-                "UPDATE jobs SET status = 'running', attempts = attempts + 1, updated_at = ? "
+                "UPDATE jobs SET status = 'running', attempts = attempts + 1, updated_at = ? "  # noqa: S608 - only ? marks
                 "WHERE id = (SELECT id FROM jobs WHERE status = 'queued' AND run_after <= ? "
-                "ORDER BY run_after, created_at LIMIT 1) RETURNING *",
-                (now, now),
+                f"{among}ORDER BY run_after, created_at LIMIT 1) RETURNING *",
+                params,
             ).fetchone()
         return _job(row) if row else None
+
+    def requeue_job(self, job_id: str) -> None:
+        """Put an interrupted job back in the queue; the interruption is not an attempt."""
+        with self.write() as db:
+            db.execute(
+                "UPDATE jobs SET status = 'queued', attempts = max(attempts - 1, 0), "
+                "updated_at = ? WHERE id = ? AND status = 'running'",
+                (iso(utcnow()), job_id),
+            )
 
     def finish_job(self, job_id: str) -> None:
         with self.write() as db:

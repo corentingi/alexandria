@@ -694,6 +694,10 @@ class Library:
             if fetcher is None:
                 raise PermanentFetchError(f"no fetcher for kind {resource.kind}")
             result = await fetcher.fetch(resource, staging)
+        except asyncio.CancelledError:
+            shutil.rmtree(staging, ignore_errors=True)
+            self._fetch_interrupted(resource_id)
+            raise
         except BaseException as exc:
             shutil.rmtree(staging, ignore_errors=True)
             await self._record_fetch_failure(resource_id, job, exc)
@@ -701,6 +705,10 @@ class Library:
         try:
             async with self.lock(resource_id):
                 await self._install_snapshot(resource_id, staging, result)
+        except asyncio.CancelledError:
+            shutil.rmtree(staging, ignore_errors=True)
+            self._fetch_interrupted(resource_id)
+            raise
         except BaseException as exc:
             shutil.rmtree(staging, ignore_errors=True)
             await self._record_fetch_failure(resource_id, job, exc)
@@ -761,6 +769,24 @@ class Library:
         resource.fetch_status = FetchStatus.READY
         resource.fetch_error = None
         resource.updated_at = utcnow()
+
+    def _fetch_interrupted(self, resource_id: str) -> None:
+        """Undo FETCHING after a cancel (shutdown, CLI timeout): not a failure, the job is
+        re-queued. Synchronous on purpose: a cancelled task should not await, and with no
+        await in between nothing else in this process touches the resource meanwhile."""
+        try:
+            if not self.files.exists(resource_id):
+                return
+            resource = self.files.read(resource_id)
+            if resource.fetch_status != FetchStatus.FETCHING:
+                return
+            resource.fetch_status = (
+                FetchStatus.READY if resource.current_snapshot else FetchStatus.PENDING
+            )
+            self.files.write(resource)
+            self.index.upsert(resource, None)
+        except Exception:
+            log.exception("could not reset the fetch status of %s", resource_id)
 
     async def _record_fetch_failure(self, resource_id: str, job: Job, exc: BaseException) -> None:
         try:

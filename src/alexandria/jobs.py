@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+from collections.abc import Collection
 from datetime import timedelta
 
 from alexandria.library import Library
@@ -66,7 +67,10 @@ class Worker:
         try:
             await handler(job)
         except asyncio.CancelledError:
-            raise  # shutdown: the job stays 'running' and is re-queued at next start
+            # Shutdown or a CLI timeout: back in the queue now, so no row is left
+            # 'running' for a process that is gone (startup also resets them).
+            index.requeue_job(job.id)
+            raise
         except Exception as exc:
             message = str(exc) or type(exc).__name__
             if self.library.is_final_attempt(job, exc):
@@ -80,8 +84,12 @@ class Worker:
         else:
             index.finish_job(job.id)
 
-    async def drain(self, timeout: float = 30) -> None:
-        """Run queued jobs until none are due. For tests and the CLI."""
+    async def drain(self, timeout: float = 30, only: Collection[str] | None = None) -> None:
+        """Run queued jobs until none are due. For tests and the CLI.
+
+        ``only`` limits it to these job ids: the CLI runs its own jobs, never the
+        server's, whose per-resource locks it does not share.
+        """
         async with asyncio.timeout(timeout):
-            while (job := self.library.index.claim_job()) is not None:
+            while (job := self.library.index.claim_job(only)) is not None:
                 await self.run(job)
