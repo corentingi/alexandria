@@ -3,10 +3,21 @@ from __future__ import annotations
 import pytest
 
 from alexandria.chunking import chunk_markdown
+from alexandria.config import Settings
+from alexandria.fetchers.base import http_client
+from alexandria.fetchers.git_repo import GitRepoFetcher
 from alexandria.ids import slugify, unique_slug
 from alexandria.models import Kind
-from alexandria.security import BlockedURL, check_url, safe_join, sanitize_filename
+from alexandria.security import (
+    BlockedURL,
+    GuardedBackend,
+    check_url,
+    safe_join,
+    sanitize_filename,
+    set_resolver,
+)
 from alexandria.urls import InvalidURL, canonicalize, detect
+from tests.conftest import PUBLIC_IP
 
 
 class TestCanonicalize:
@@ -94,6 +105,50 @@ class TestSSRF:
     async def test_scheme(self) -> None:
         with pytest.raises(BlockedURL):
             await check_url("ftp://example.com/")
+
+
+class FakeBackend:
+    def __init__(self) -> None:
+        self.hosts: list[str] = []
+
+    async def connect_tcp(self, host: str, port: int, **kwargs: object) -> str:
+        self.hosts.append(host)
+        return "stream"
+
+
+class TestDnsRebinding:
+    async def test_connects_to_the_checked_address(self) -> None:
+        inner = FakeBackend()
+        backend = GuardedBackend(inner, ["intranet.example"])  # type: ignore[arg-type]
+        await backend.connect_tcp("blog.example.com", 443)
+        await backend.connect_tcp("intranet.example", 80)  # allow-listed: by name
+        assert inner.hosts == [PUBLIC_IP, "intranet.example"]
+
+    async def test_a_second_answer_cannot_redirect_the_connection(self) -> None:
+        answers = iter([[PUBLIC_IP], ["127.0.0.1"]])
+
+        async def rebinding(host: str, port: int) -> list[str]:
+            return next(answers)
+
+        previous = set_resolver(rebinding)
+        try:
+            await check_url("https://rebinding.example/")  # first answer: public
+            inner = FakeBackend()
+            with pytest.raises(BlockedURL, match="non-public"):
+                await GuardedBackend(inner, []).connect_tcp("rebinding.example", 443)  # type: ignore[arg-type]
+            assert inner.hosts == []
+        finally:
+            set_resolver(previous)
+
+    def test_http_client_uses_the_guarded_backend(self, settings: Settings) -> None:
+        client = http_client(settings)
+        pool = client._transport._pool  # type: ignore[attr-defined]
+        assert isinstance(pool._network_backend, GuardedBackend)
+
+    async def test_git_clone_is_pinned(self, settings: Settings) -> None:
+        fetcher = GitRepoFetcher(settings, ("https", "file"))
+        assert await fetcher._guard("https://github.com/a/b.git") == f"github.com:443:{PUBLIC_IP}"
+        assert await fetcher._guard("file:///tmp/repo") is None
 
 
 class TestPaths:

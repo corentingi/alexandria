@@ -13,7 +13,7 @@ import httpx
 
 from alexandria.config import Settings
 from alexandria.models import Artifact, Resource
-from alexandria.security import BlockedURL, check_url
+from alexandria.security import BlockedURL, GuardedBackend, check_url
 from alexandria.walls import AFTER_TIP, site_warning
 
 
@@ -76,10 +76,20 @@ class Download:
 
 
 def http_client(settings: Settings) -> httpx.AsyncClient:
+    transport = httpx.AsyncHTTPTransport()
+    # Every connection resolves and checks its host, then connects to that address
+    # (DNS rebinding). httpx has no public hook for this; the test suite pins the shape.
+    pool = transport._pool
+    pool._network_backend = GuardedBackend(
+        pool._network_backend,
+        settings.security.allow_private_hosts,
+    )
     return httpx.AsyncClient(
+        transport=transport,
         timeout=settings.fetch.timeout_s,
         follow_redirects=False,  # we follow by hand to apply the SSRF guard on every hop
         headers={"User-Agent": settings.fetch.user_agent},
+        trust_env=False,  # a proxy would connect for us, out of the guard's reach
     )
 
 

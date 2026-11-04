@@ -17,6 +17,7 @@ import tarfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -28,7 +29,7 @@ from alexandria.fetchers.base import (
     http_client,
 )
 from alexandria.models import Artifact, Kind, Resource
-from alexandria.security import BlockedURL, check_url
+from alexandria.security import BlockedURL, check_url, pinned_address
 from alexandria.storage.files import describe_file
 from alexandria.urls import Detected, detect
 
@@ -93,14 +94,14 @@ class GitRepoFetcher:
                 artifacts.append(describe_file(readme, "readme"))
                 readme_found = True
 
-        await self._guard(clone_url)
+        pin = await self._guard(clone_url)
         work = staging_dir / "work"
         work.mkdir()
         repo_meta: dict[str, Any] = {}
         size_mb = 0.0
         clone: CloneResult | None = None
         try:
-            clone = await self._clone(clone_url, work, size_kb)
+            clone = await self._clone(clone_url, work, size_kb, pin)
         except GitError as exc:
             if not exc.too_large:
                 raise
@@ -178,11 +179,11 @@ class GitRepoFetcher:
             name = f"{detected.owner}-{detected.repo}"
         else:
             name = _title_from_url(detected.canonical_url).replace("/", "-")
-        await self._guard(clone_url)
+        pin = await self._guard(clone_url)
         work = staging_dir / "work"
         work.mkdir()
         try:
-            clone = await self._clone(clone_url, work, None)
+            clone = await self._clone(clone_url, work, None, pin)
             if _dir_size(clone.path) / 1_000_000 > self.settings.git.max_archive_mb:
                 raise GitError("repository is larger than git.max_archive_mb", too_large=True)
             archive = staging_dir / f"{name}.git.tar.gz"
@@ -232,18 +233,30 @@ class GitRepoFetcher:
 
     # -- git ----------------------------------------------------------------------
 
-    async def _guard(self, clone_url: str) -> None:
+    async def _guard(self, clone_url: str) -> str | None:
+        """Check the clone URL; returns git's ``http.curloptResolve`` entry pinning the host
+        to the checked address, so git cannot resolve it again to another (DNS rebinding).
+        """
         scheme = clone_url.split(":", 1)[0].lower()
         if scheme not in self.allowed_protocols:
             raise PermanentFetchError(f"git protocol {scheme!r} is not allowed")
         if scheme == "file":
-            return
+            return None
         try:
-            await check_url(clone_url, self.settings.security.allow_private_hosts, ("https",))
+            address = await pinned_address(
+                clone_url, self.settings.security.allow_private_hosts, ("https",)
+            )
         except BlockedURL as exc:
             raise PermanentFetchError(f"blocked by SSRF guard: {exc}") from exc
+        if address is None:
+            return None
+        parts = urlsplit(clone_url)
+        ip = f"[{address}]" if ":" in address else address
+        return f"{parts.hostname}:{parts.port or 443}:{ip}"
 
-    async def _clone(self, url: str, work: Path, size_kb: int | None) -> CloneResult:
+    async def _clone(
+        self, url: str, work: Path, size_kb: int | None, pin: str | None = None
+    ) -> CloneResult:
         target = work / "repository.git"
         cfg = self.settings.git
         too_big = size_kb is not None and size_kb / 1024 > cfg.full_history_max_mb
@@ -253,6 +266,7 @@ class GitRepoFetcher:
                     ["clone", "--bare", url, str(target)],
                     timeout=cfg.clone_timeout_s,
                     watch=target,
+                    pin=pin,
                 )
                 return CloneResult(target, "full", None)
             except GitError as exc:
@@ -272,6 +286,7 @@ class GitRepoFetcher:
             ],
             timeout=cfg.clone_timeout_s,
             watch=target,
+            pin=pin,
         )
         return CloneResult(target, "shallow", cfg.shallow_depth)
 
@@ -309,8 +324,10 @@ class GitRepoFetcher:
         timeout: float = 120,
         check: bool = True,
         watch: Path | None = None,
+        pin: str | None = None,
     ) -> str | None:
-        """Run git. With ``watch``, kill it once that directory outgrows max_archive_mb."""
+        """Run git. With ``watch``, kill it once that directory outgrows max_archive_mb.
+        ``pin`` is a ``host:port:address`` entry for ``http.curloptResolve``."""
         env = {
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
             "HOME": str(cwd or Path.cwd()),
@@ -319,19 +336,19 @@ class GitRepoFetcher:
             "GIT_CONFIG_NOSYSTEM": "1",
             "GIT_CONFIG_GLOBAL": os.devnull,
             "GIT_LFS_SKIP_SMUDGE": "1",
-            # A redirect would send git to a host the SSRF guard never saw.
-            "GIT_CONFIG_COUNT": "1",
-            "GIT_CONFIG_KEY_0": "http.followRedirects",
-            "GIT_CONFIG_VALUE_0": "false",
         }
+        # A redirect would send git to a host the SSRF guard never saw.
+        config = [("http.followRedirects", "false")]
+        if pin:
+            config.append(("http.curloptResolve", pin))
         token = self.settings.github.token
         if token and args[:1] == ["clone"] and any("github.com" in a for a in args):
             basic = base64.b64encode(f"x-access-token:{token}".encode()).decode()
-            env |= {
-                "GIT_CONFIG_COUNT": "2",
-                "GIT_CONFIG_KEY_1": "http.https://github.com/.extraheader",
-                "GIT_CONFIG_VALUE_1": f"Authorization: Basic {basic}",
-            }
+            config.append(("http.https://github.com/.extraheader", f"Authorization: Basic {basic}"))
+        env["GIT_CONFIG_COUNT"] = str(len(config))
+        for n, (key, value) in enumerate(config):
+            env[f"GIT_CONFIG_KEY_{n}"] = key
+            env[f"GIT_CONFIG_VALUE_{n}"] = value
         proc = await asyncio.create_subprocess_exec(
             "git",
             *args,

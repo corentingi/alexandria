@@ -10,6 +10,9 @@ from collections.abc import Awaitable, Callable, Iterable
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from httpcore import AsyncNetworkBackend, AsyncNetworkStream
+from httpcore._backends.base import SOCKET_OPTION
+
 IPAddress = ipaddress.IPv4Address | ipaddress.IPv6Address
 Resolver = Callable[[str, int], Awaitable[list[str]]]
 
@@ -59,15 +62,35 @@ async def check_url(
     schemes: Iterable[str] = ("http", "https"),
 ) -> None:
     """Raise ``BlockedURL`` unless every address ``url``'s host resolves to is public."""
+    await pinned_address(url, allow_private_hosts, schemes)
+
+
+async def pinned_address(
+    url: str,
+    allow_private_hosts: Iterable[str] = (),
+    schemes: Iterable[str] = ("http", "https"),
+) -> str | None:
+    """Check ``url`` like ``check_url`` and return the address to connect to.
+
+    Connecting by name would resolve the host a second time, and a DNS server answering
+    a public address to the check and ``127.0.0.1`` to the connect (DNS rebinding) would
+    get through. Callers connect to this address instead. ``None``: an allow-listed host,
+    connected to by name.
+    """
     parts = urlsplit(url)
     if parts.scheme not in set(schemes):
         raise BlockedURL(f"scheme {parts.scheme!r} is not allowed")
     host = (parts.hostname or "").lower()
     if not host:
         raise BlockedURL("URL has no host")
-    if host in {h.lower() for h in allow_private_hosts}:
-        return
     port = parts.port or (443 if parts.scheme == "https" else 80)
+    return await _host_address(host, port, allow_private_hosts)
+
+
+async def _host_address(host: str, port: int, allow_private_hosts: Iterable[str]) -> str | None:
+    host = host.lower().rstrip(".")
+    if host in {h.lower() for h in allow_private_hosts}:
+        return None
     try:
         literal = ipaddress.ip_address(host)
     except ValueError:
@@ -83,10 +106,49 @@ async def check_url(
             raise BlockedURL(f"cannot resolve {host!r}: {exc}") from exc
         if not addresses:
             raise BlockedURL(f"cannot resolve {host!r}")
+    checked = []
     for address in addresses:
         ip = ipaddress.ip_address(address.split("%", 1)[0])
         if is_forbidden_ip(ip):
             raise BlockedURL(f"host {host!r} resolves to a non-public address ({ip})")
+        checked.append(str(ip))
+    return checked[0]
+
+
+class GuardedBackend(AsyncNetworkBackend):
+    """httpcore network backend that resolves and checks every host itself, then connects
+    to the checked address: a TLS connection still verifies the certificate against the
+    host name, which httpcore passes separately. This is what makes the SSRF guard hold
+    against DNS rebinding; the ``check_url`` calls before a request give clear errors."""
+
+    def __init__(self, inner: AsyncNetworkBackend, allow_private_hosts: Iterable[str]) -> None:
+        self.inner = inner
+        self.allow = list(allow_private_hosts)
+
+    async def connect_tcp(
+        self,
+        host: str,
+        port: int,
+        timeout: float | None = None,
+        local_address: str | None = None,
+        socket_options: Iterable[SOCKET_OPTION] | None = None,
+    ) -> AsyncNetworkStream:
+        address = await _host_address(host, port, self.allow) or host
+        return await self.inner.connect_tcp(
+            address, port, timeout=timeout, local_address=local_address,
+            socket_options=socket_options,
+        )  # fmt: skip
+
+    async def connect_unix_socket(
+        self,
+        path: str,
+        timeout: float | None = None,
+        socket_options: Iterable[SOCKET_OPTION] | None = None,
+    ) -> AsyncNetworkStream:
+        raise BlockedURL("unix sockets are not allowed")
+
+    async def sleep(self, seconds: float) -> None:
+        await self.inner.sleep(seconds)
 
 
 _SAFE_CHARS = re.compile(r"[^A-Za-z0-9._-]+")

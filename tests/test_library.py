@@ -383,7 +383,7 @@ class TestGit:
         real_clone = fetcher._clone  # type: ignore[attr-defined]
         seen: list[str] = []
 
-        async def local_clone(url: str, work: Path, size_kb: int | None):  # type: ignore[no-untyped-def]
+        async def local_clone(url: str, work: Path, size_kb: int | None, pin: str | None):  # type: ignore[no-untyped-def]
             seen.append(url)
             return await real_clone(f"file://{source_repo}", work, size_kb)
 
@@ -410,7 +410,7 @@ class TestGit:
         fetcher = library.fetchers[Kind.GIT_REPO]
         real_clone = fetcher._clone  # type: ignore[attr-defined]
 
-        async def local_clone(url: str, work: Path, size_kb: int | None):  # type: ignore[no-untyped-def]
+        async def local_clone(url: str, work: Path, size_kb: int | None, pin: str | None):  # type: ignore[no-untyped-def]
             assert url == "https://github.com/Owner/Repo.git"
             assert size_kb == 10
             return await real_clone(f"file://{source_repo}", work, size_kb)
@@ -474,9 +474,12 @@ class TestReviewRegressions:
         monkeypatch.setattr(git_repo.asyncio, "create_subprocess_exec", fake_exec)
         fetcher = library.fetchers[Kind.GIT_REPO]
         with pytest.raises(RuntimeError):
-            await fetcher._git(["clone", "x", "y"])  # type: ignore[attr-defined]
+            await fetcher._git(["clone", "x", "y"], pin="h.example:443:1.2.3.4")  # type: ignore[attr-defined]
         assert seen["GIT_CONFIG_KEY_0"] == "http.followRedirects"
         assert seen["GIT_CONFIG_VALUE_0"] == "false"
+        assert seen["GIT_CONFIG_KEY_1"] == "http.curloptResolve"
+        assert seen["GIT_CONFIG_VALUE_1"] == "h.example:443:1.2.3.4"
+        assert seen["GIT_CONFIG_COUNT"] == "2"
         assert seen["GIT_ALLOW_PROTOCOL"] == "https:file"
 
     async def test_oversized_repo_keeps_metadata(
