@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from collections.abc import Iterator
 from typing import Any
 from urllib.parse import unquote_plus
 
@@ -12,6 +13,7 @@ import httpx
 import pytest
 from starlette.testclient import TestClient
 
+from alexandria.app import MCP_MAX_BODY
 from alexandria.auth import ScopeLevel, TokenStore
 from alexandria.config import Settings
 from tests.conftest import URL
@@ -449,6 +451,25 @@ class TestReviewRegressions:
         headers = auth(tokens["write"]) | {"content-length": too_big}
         res = client.post("/api/v1/documents", headers=headers, content=b"")
         assert res.status_code == 413
+
+    def test_mcp_body_is_capped(self, client: TestClient, tokens: dict[str, str]) -> None:
+        headers = auth(tokens["read"]) | {"content-type": "application/json"}
+        big = {"content-length": str(MCP_MAX_BODY + 1)}
+        assert client.post("/mcp", headers=headers | big, content=b"").status_code == 413
+
+        def body() -> Iterator[bytes]:
+            for _ in range(MCP_MAX_BODY // 1_000_000 + 1):
+                yield b" " * 1_000_000
+
+        # Chunked: no Content-Length, so the cap applies while the body is read.
+        assert client.post("/mcp", headers=headers, content=body()).status_code == 413
+
+    def test_read_token_cannot_start_an_upload(
+        self, client: TestClient, tokens: dict[str, str]
+    ) -> None:
+        files = {"file": ("big.txt", b"x" * 100_000)}
+        res = client.post("/api/v1/documents", files=files, headers=auth(tokens["read"]))
+        assert res.status_code == 403 and "write token" in res.text
 
     def test_mcp_labels_extracted_meta(self, client: TestClient, tokens: dict[str, str]) -> None:
         made = tool(client, tokens["write"], "ingest_url", url=URL, why="x")
