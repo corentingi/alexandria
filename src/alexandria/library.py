@@ -344,7 +344,7 @@ class Library:
                     fh.write(block)
             if size == 0:
                 raise InvalidInput("the file is empty")
-            sha = sha256_file(tmp)
+            sha = await asyncio.to_thread(sha256_file, tmp)  # up to attachments.max_mb
             canonical = f"urn:sha256:{sha}"
             scope, project = _scope(scope, project)
             async with self._ingest_lock:
@@ -499,9 +499,11 @@ class Library:
     async def delete(self, ref: str) -> str:
         resource_id = self.resolve(ref)
         async with self.lock(resource_id):
-            self.files.delete(resource_id)
+            detached = self.files.detach(resource_id)
             self.index.delete(resource_id)
         self._locks.pop(resource_id, None)
+        if detached is not None:  # gigabytes of snapshots: not on the event loop
+            await asyncio.to_thread(shutil.rmtree, detached, True)
         return resource_id
 
     async def refetch(self, ref: str) -> str:
@@ -862,7 +864,7 @@ class Library:
         origin_url: str | None,
         added_by: str | None,
     ) -> Attachment:
-        sha = sha256_file(source)
+        sha = await asyncio.to_thread(sha256_file, source)  # up to attachments.max_mb
         size = source.stat().st_size
         async with self.lock(resource_id):
             resource = self.files.read(resource_id)

@@ -89,10 +89,16 @@ class FileStore:
             os.fsync(fh.fileno())
         os.replace(tmp, target)
 
-    def delete(self, resource_id: str) -> None:
+    def detach(self, resource_id: str) -> Path | None:
+        """Move a resource folder out of ``resources/`` (one rename, instant) and return
+        where it went, for the caller to remove off the event loop. ``tmp/`` is wiped at
+        startup, so a crash in between leaves nothing behind."""
         directory = self.resource_dir(resource_id)
-        if directory.exists():
-            shutil.rmtree(directory)
+        if not directory.exists():
+            return None
+        target = self.tmp_dir / f"deleted-{resource_id}-{os.getpid()}-{id(directory)}"
+        os.replace(directory, target)
+        return target
 
     # -- snapshots ---------------------------------------------------------------
 

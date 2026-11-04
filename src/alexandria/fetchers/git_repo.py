@@ -120,15 +120,15 @@ class GitRepoFetcher:
                     readme.write_text(text, encoding="utf-8")
                     artifacts.append(describe_file(readme, "readme"))
                     readme_found = True
-            size_mb = _dir_size(clone.path) / 1_000_000
+            # Repositories reach gigabytes: sizing, hashing and removal run in threads.
+            size_mb = await asyncio.to_thread(_dir_size, clone.path) / 1_000_000
             if size_mb > self.settings.git.max_archive_mb:
                 meta["archive_skipped"] = "too_large"
             else:
                 archive = staging_dir / ARCHIVE_NAME
                 await asyncio.to_thread(_make_tarball, clone.path, archive)
-                artifacts.insert(
-                    0,
-                    describe_file(
+                described = await asyncio.to_thread(
+                    lambda: describe_file(
                         archive,
                         "repository",
                         history=clone.history,
@@ -136,9 +136,10 @@ class GitRepoFetcher:
                         head_commit=repo_meta.get("head_commit"),
                         commit_count=repo_meta.get("commit_count"),
                         default_branch=repo_meta.get("default_branch"),
-                    ),
+                    )
                 )
-        shutil.rmtree(work)
+                artifacts.insert(0, described)
+        await asyncio.to_thread(shutil.rmtree, work)
 
         fetch_json = staging_dir / "fetch.json"
         fetch_json.write_text(
@@ -184,12 +185,13 @@ class GitRepoFetcher:
         work.mkdir()
         try:
             clone = await self._clone(clone_url, work, None, pin)
-            if _dir_size(clone.path) / 1_000_000 > self.settings.git.max_archive_mb:
+            size_mb = await asyncio.to_thread(_dir_size, clone.path) / 1_000_000
+            if size_mb > self.settings.git.max_archive_mb:
                 raise GitError("repository is larger than git.max_archive_mb", too_large=True)
             archive = staging_dir / f"{name}.git.tar.gz"
             await asyncio.to_thread(_make_tarball, clone.path, archive)
         finally:
-            shutil.rmtree(work, ignore_errors=True)
+            await asyncio.to_thread(shutil.rmtree, work, True)
         return ArchivedRepo(archive, clone_url, clone.history)
 
     # -- GitHub API ----------------------------------------------------------------

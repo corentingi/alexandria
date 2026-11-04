@@ -215,6 +215,8 @@ class TestReindex:
         assert library.search("kestrel") == [] and library.search("merlin") == []
         await library.delete(note.id)
         assert library.search("hobby") == []
+        assert not library.files.resource_dir(note.id).exists()
+        assert list(library.files.tmp_dir.iterdir()) == []  # removed, not just moved aside
 
     async def test_schema_1_index_is_migrated(self, library: Library) -> None:
         note = await library.create_note("Kestrel", "x")
