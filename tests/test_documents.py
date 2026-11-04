@@ -12,7 +12,7 @@ from alexandria.extract import ExtractionError, _decode, detect_format, extract
 from alexandria.fetchers.document import charset_of
 from alexandria.isolate import run_isolated
 from alexandria.jobs import Worker
-from alexandria.library import Library, Update, parse_url_list
+from alexandria.library import InvalidInput, Library, Update, parse_url_list
 from alexandria.models import FetchStatus, Kind, Status
 from tests.fixtures import make_docx, make_epub, make_pdf, make_xxe_docx, make_zip_bomb
 
@@ -282,6 +282,32 @@ class TestImport:
             "https://c.example/",
             "https://e.example/page",
         ]
+
+    async def test_import_job_resumes_and_survives_a_bad_link(
+        self, library: Library, worker: Worker, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        text = "\n".join(f"https://a.example/{n}" for n in range(60))
+        job_id, count = library.start_url_import(text, tags=["batch"], name="links.txt")
+        assert count == 60
+        job = library.index.job(job_id)
+        assert job is not None
+        library.index.set_job_payload(job_id, job.payload | {"position": 55})  # a restart
+        real_ingest = library.ingest
+
+        async def flaky(url: str, **kwargs: object) -> object:
+            if url.endswith("/57"):
+                raise RuntimeError("disk hiccup")
+            return await real_ingest(url, **kwargs)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(library, "ingest", flaky)
+        await worker.drain(only={job_id})
+        done = library.index.job(job_id)
+        assert done is not None and done.status == "done" and "entries" not in done.payload
+        report = done.payload["report"]
+        assert report["created"] == 4 and report["error_count"] == 1  # 55..59, minus 57
+        assert "disk hiccup" in report["errors"][0]
+        with pytest.raises(InvalidInput, match="no links"):
+            library.start_url_import("nothing here")
 
     async def test_import(self, library: Library) -> None:
         await library.ingest("https://a.example/x")
