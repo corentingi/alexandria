@@ -275,6 +275,8 @@ class TestUi:
         assert client.get(slug_page).status_code == 200
         inbox = client.get("/inbox").text
         assert "Why keep this?" in inbox
+        assert '<a href="/inbox" class="on" aria-current="page">' in inbox
+        assert 'aria-label="Sign out"' in inbox
         again = client.post("/add", data={"url": URL, "csrf": csrf, "why": "for the talk"})
         assert "Already in the library: your reason added." in again.text
         client.post(f"/r/{again.url.path.split('/')[-1]}/why", data={"why": "", "csrf": csrf})

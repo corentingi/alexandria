@@ -18,17 +18,17 @@
   <aside class="side">
     <a class="brand" href="/">{{ icon("logo", 26) }}<b>Alexandria</b></a>
     <nav class="nav" aria-label="Main">
-      <a href="/" class="{{ 'on' if path == '/' }}">{{ icon("search") }}<span class="label">Search</span></a>
-      <a href="/inbox" class="{{ 'on' if path == '/inbox' }}">{{ icon("inbox") }}<span class="label">Inbox</span>{% if inbox_count %}<span class="count">{{ inbox_count }}</span>{% endif %}</a>
-      <a href="/add" class="{{ 'on' if path == '/add' }}">{{ icon("plus") }}<span class="label">Add</span></a>
-      <a href="/activity" class="{{ 'on' if path == '/activity' }}">{{ icon("activity") }}<span class="label">Activity</span>{% if active_jobs %}<span class="count live">{{ active_jobs }}</span>{% endif %}</a>
-      <a href="/tags" class="{{ 'on' if path == '/tags' }}">{{ icon("tag") }}<span class="label">Tags</span></a>
-      <a href="/settings" class="{{ 'on' if path == '/settings' }}">{{ icon("settings") }}<span class="label">Settings</span></a>
+      <a href="/" class="{{ 'on' if path == '/' }}"{% if path == '/' %} aria-current="page"{% endif %}>{{ icon("search") }}<span class="label">Search</span></a>
+      <a href="/inbox" class="{{ 'on' if path == '/inbox' }}"{% if path == '/inbox' %} aria-current="page"{% endif %}>{{ icon("inbox") }}<span class="label">Inbox</span>{% if inbox_count %}<span class="count">{{ inbox_count }}</span>{% endif %}</a>
+      <a href="/add" class="{{ 'on' if path == '/add' }}"{% if path == '/add' %} aria-current="page"{% endif %}>{{ icon("plus") }}<span class="label">Add</span></a>
+      <a href="/activity" class="{{ 'on' if path == '/activity' }}"{% if path == '/activity' %} aria-current="page"{% endif %}>{{ icon("activity") }}<span class="label">Activity</span>{% if active_jobs %}<span class="count live">{{ active_jobs }}</span>{% endif %}</a>
+      <a href="/tags" class="{{ 'on' if path == '/tags' }}"{% if path == '/tags' %} aria-current="page"{% endif %}>{{ icon("tag") }}<span class="label">Tags</span></a>
+      <a href="/settings" class="{{ 'on' if path == '/settings' }}"{% if path == '/settings' %} aria-current="page"{% endif %}>{{ icon("settings") }}<span class="label">Settings</span></a>
     </nav>
     {% if user %}<div class="foot">
-      Signed in as <b>{{ user.name }}</b> ({{ user.scope.label }})<br>
-      <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn ghost sm" type="submit">Sign out</button></form>
-      <span class="muted">v{{ version }}</span>
+      <span class="who">Signed in as <b>{{ user.name }}</b> ({{ user.scope.label }})<br></span>
+      <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn ghost sm" type="submit" aria-label="Sign out">{{ icon("logout", 15) }}<span class="label">Sign out</span></button></form>
+      <span class="muted ver">v{{ version }}</span>
     </div>{% endif %}
   </aside>
   <main class="main"><div class="wrap {% block wrap %}{% endblock %}">
