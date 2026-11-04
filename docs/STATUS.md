@@ -38,9 +38,10 @@
 - A review on 2026-11-02 found 8 issues, all fixed (ADR-0014), each with a regression test.
 - A whole-codebase review on 2026-11-04 led to DNS-rebinding pinning (ADR-0019), parsers
   in a child process (ADR-0020), link imports as jobs, and fixes to jobs, reindex,
-  limits and the UI. Still open from it: search snippets for every match before the
-  limit, no HTTP connection reuse, the Activity page polls even when idle, no time limit
-  on a whole job (only on downloads, parsing and git clones).
+  limits, accessibility and the UI, plus inbox keyboard triage, tag completion and
+  "already saved" on the add page. Still open from it: search snippets for every match
+  before the limit, no HTTP connection reuse, no time limit on a whole job (only on
+  downloads, parsing and git clones), bulk actions, tag rename/merge, a projects page.
 - Fetches ignore `HTTP_PROXY`/`HTTPS_PROXY`: a proxy would bypass the SSRF guard.
 - No incremental `git fetch` on re-fetch: each snapshot is a full new clone.
 - `stars`, `topics`… are refreshed only on re-fetch.
