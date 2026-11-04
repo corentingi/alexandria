@@ -111,6 +111,9 @@ CREATE TABLE IF NOT EXISTS jobs (
     updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS jobs_claim ON jobs(status, run_after);
+CREATE INDEX IF NOT EXISTS jobs_resource ON jobs(resource_id, type, status);
+CREATE INDEX IF NOT EXISTS jobs_type ON jobs(type, status);
+CREATE INDEX IF NOT EXISTS jobs_created ON jobs(created_at);
 """
 
 # Index tables rebuilt by reindex (everything but jobs). Order matters for FKs.
@@ -494,12 +497,24 @@ class Index:
         return _job(row) if row else None
 
     def jobs(
-        self, status: str | None = None, resource_id: str | None = None, limit: int = 100
+        self,
+        status: str | None = None,
+        resource_id: str | None = None,
+        limit: int = 100,
+        types: Sequence[str] = (),
+        statuses: Sequence[str] = (),
     ) -> list[Job]:
-        clauses, params = ["1 = 1"], []
+        clauses: list[str] = ["1 = 1"]
+        params: list[Any] = []
         if status:
             clauses.append("status = ?")
             params.append(status)
+        if statuses:
+            clauses.append(f"status IN ({','.join('?' * len(statuses))})")
+            params.extend(statuses)
+        if types:
+            clauses.append(f"type IN ({','.join('?' * len(types))})")
+            params.extend(types)
         if resource_id:
             clauses.append("resource_id = ?")
             params.append(resource_id)
@@ -510,6 +525,20 @@ class Index:
                 [*params, limit],
             ).fetchall()
         return [_job(r) for r in rows]
+
+    def job_counts(self) -> dict[str, int]:
+        """Jobs per status, counted by SQLite (the Activity page polls this)."""
+        with self.read() as db:
+            rows = db.execute("SELECT status, count(*) AS n FROM jobs GROUP BY status")
+            return {r["status"]: int(r["n"]) for r in rows}
+
+    def prune_jobs(self, before: datetime) -> int:
+        """Forget finished jobs last updated before ``before``. Failed ones stay visible."""
+        with self.write() as db:
+            cur = db.execute(
+                "DELETE FROM jobs WHERE status = 'done' AND updated_at < ?", (iso(before),)
+            )
+            return cur.rowcount
 
     def pending_jobs(self, resource_id: str, job_type: str) -> int:
         with self.read() as db:

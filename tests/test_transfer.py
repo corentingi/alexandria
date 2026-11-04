@@ -118,6 +118,9 @@ class TestExport:
 
     async def test_one_export_at_a_time(self, library: Library) -> None:
         library.start_export()
+        library.start_url_import("\n".join(f"https://a.example/{n}" for n in range(1200)))
+        for n in range(1100):  # newer jobs than the export: it must still be seen
+            library.index.enqueue(f"j{n}", "fetch", None)
         with pytest.raises(InvalidInput, match="already"):
             library.start_export()
 

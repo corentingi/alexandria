@@ -86,6 +86,8 @@ class WorkerSettings(BaseModel):
     poll_interval_s: float = 1.0
     # Backoff before attempt 2, 3, ... (seconds).
     backoff_s: list[float] = Field(default_factory=lambda: [60.0, 300.0, 1800.0])
+    # Finished jobs are forgotten after this many days (at startup). Failed ones stay.
+    keep_done_days: int = 30
 
 
 class SecuritySettings(BaseModel):

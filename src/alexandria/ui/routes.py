@@ -146,9 +146,7 @@ def render(request: Request, name: str, *, code: int = 200, **data: Any) -> HTML
         "csrf": _csrf_for(request, cookie) if cookie else "",
         "version": __version__,
         "inbox_count": c.library.index.counts().get("inbox", 0) if who else 0,
-        "active_jobs": len(c.library.index.jobs("running")) + len(c.library.index.jobs("queued"))
-        if who
-        else 0,
+        "active_jobs": _active_jobs(c.library.index.job_counts()) if who else 0,
         "path": request.url.path,
     }
     response = templates.TemplateResponse(request, name, base | data, status_code=code)
@@ -773,7 +771,8 @@ async def activity(request: Request, c: Ctx, who: User, status: str | None = Non
     index = c.library.index
     jobs = index.jobs(status or None, limit=150)
     rows = index.rows(list({j.resource_id for j in jobs if j.resource_id}))
-    counts = {s: len(index.jobs(s, limit=10_000)) for s in ("queued", "running", "failed", "done")}
+    by_status = index.job_counts()
+    counts = {s: by_status.get(s, 0) for s in ("queued", "running", "failed", "done")}
     data: dict[str, Any] = {"jobs": jobs, "rows": rows, "status": status or "", "counts": counts}
     if request.headers.get("hx-request") and request.headers.get("hx-target") == "jobs":
         return render(request, "_jobs.html", **data)
@@ -914,10 +913,15 @@ async def revoke_token(c: Ctx, who: User, name: str) -> Response:
     return back("/settings#tokens", notice=f"Revoked {name}. Agents using it are locked out now.")
 
 
+def _active_jobs(counts: dict[str, int]) -> int:
+    return counts.get("queued", 0) + counts.get("running", 0)
+
+
 def _transfers(c: AppContext) -> dict[str, Any]:
     library = c.library
-    active = [j for j in library.index.jobs("queued", limit=500) + library.index.jobs(
-        "running", limit=500) if j.type in ("export", "import_library")]  # fmt: skip
+    active = library.index.jobs(
+        types=("export", "import_library"), statuses=("queued", "running"), limit=500
+    )
     exports = library.exports()
     return {
         "exports": exports,

@@ -14,7 +14,7 @@ import re
 import shutil
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -1050,8 +1050,9 @@ class Library:
         return found
 
     def _transfer_jobs(self, job_type: str) -> list[Job]:
-        active = self.index.jobs("queued", limit=1000) + self.index.jobs("running", limit=1000)
-        return [j for j in active if j.type == job_type]
+        # Filtered in SQL: a window of recent jobs would miss an export queued before a
+        # 5,000-link import, and allow a second one.
+        return self.index.jobs(types=[job_type], statuses=("queued", "running"), limit=1000)
 
     def start_export(self) -> ExportInfo:
         """Queue a full export into ``<data>/exports/<id>/``. One at a time."""
@@ -1272,8 +1273,12 @@ class Library:
             return [], None
 
     def startup(self) -> int:
-        """Reset interrupted jobs and wipe staging. Returns how many jobs were reset."""
+        """Reset interrupted jobs, prune old finished ones and wipe staging. Returns how
+        many jobs were reset."""
         self.files.wipe_tmp()
+        keep = timedelta(days=self.settings.worker.keep_done_days)
+        if pruned := self.index.prune_jobs(utcnow() - keep):
+            log.info("forgot %d finished job(s) older than %s", pruned, keep)
         return self.index.reset_running_jobs()
 
     def stats(self) -> dict[str, Any]:

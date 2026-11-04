@@ -613,3 +613,22 @@ class TestInterruptedJobs:
         res = library.get(result.resource.id)
         assert res.fetch_status == FetchStatus.FAILED
         assert "took longer than" in (res.fetch_error or "")
+
+
+class TestJobTable:
+    async def test_old_finished_jobs_are_pruned(self, library: Library) -> None:
+        from datetime import timedelta
+
+        from alexandria.models import iso, utcnow
+
+        for n, status in enumerate(("done", "failed", "done")):
+            library.index.enqueue(f"j{n}", "fetch", None)
+            with library.index.write() as db:
+                age = 40 if n < 2 else 1
+                db.execute(
+                    "UPDATE jobs SET status = ?, updated_at = ? WHERE id = ?",
+                    (status, iso(utcnow() - timedelta(days=age)), f"j{n}"),
+                )
+        library.startup()
+        assert {j.id for j in library.index.jobs(limit=10)} == {"j1", "j2"}  # failed stays
+        assert library.index.job_counts() == {"failed": 1, "done": 1}
