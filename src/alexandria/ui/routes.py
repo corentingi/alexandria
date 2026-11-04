@@ -397,16 +397,26 @@ async def set_why(
 
 @router.get("/add")
 async def add_page(
-    request: Request, who: User, url: str = "", title: str = "", tab: str = "url"
+    request: Request, c: Ctx, who: User, url: str = "", title: str = "", tab: str = "url"
 ) -> Response:
-    warning = site_warning(url) if url else None
-    return render(request, "add.html", url=url, title=title, tab=tab, warning=warning)
+    return render(request, "add.html", url=url, title=title, tab=tab, **_url_notes(c, url))
 
 
 @router.get("/add/check")
-async def add_check(request: Request, who: User, url: str = "") -> Response:
-    """Live warning under the URL field for sites that need a login or block fetches."""
-    return render(request, "_site_warning.html", warning=site_warning(url) if url else None)
+async def add_check(request: Request, c: Ctx, who: User, url: str = "") -> Response:
+    """Live notes under the URL field: already saved, or a site that blocks fetches."""
+    return render(request, "_site_warning.html", **_url_notes(c, url))
+
+
+def _url_notes(c: AppContext, url: str) -> dict[str, Any]:
+    url = url.strip()
+    if not url:
+        return {"warning": None, "saved": None}
+    try:
+        saved = c.library.lookup_url(url)
+    except InvalidInput:  # not a URL yet: the user is still typing
+        saved = None
+    return {"warning": None if saved else site_warning(url), "saved": saved}
 
 
 @router.post("/add", dependencies=[Csrf])

@@ -1,1 +1,2 @@
-{% if warning %}<div class="notice warn site-warning" role="status"><b>Heads-up:</b> {{ warning.message }}</div>{% endif %}
+{% if saved %}<div class="notice ok site-warning" role="status"><b>Already saved</b> ({{ saved.status.value }}{% if saved.created_by %}, by {{ saved.created_by }}{% endif %}, {{ saved.captured_at | ago }}): <a href="/r/{{ saved.slug }}">{{ saved.title }}</a>{% if saved.why %}<br>Why: {{ saved.why }}{% else %}<br>It has no reason yet: the one you type below will be added.{% endif %}</div>
+{% elif warning %}<div class="notice warn site-warning" role="status"><b>Heads-up:</b> {{ warning.message }}</div>{% endif %}

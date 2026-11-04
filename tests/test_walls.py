@@ -162,3 +162,18 @@ class TestInterfaces:
 
         res = client.post("/api/v1/resources", json={"url": REDDIT}, headers=auth(tokens["write"]))
         assert "attach a PDF" in res.json()["warning"]
+
+
+class TestAlreadySaved:
+    def test_add_page_says_a_link_is_saved(
+        self, client: TestClient, tokens: dict[str, str]
+    ) -> None:
+        _InterfaceUi().login(client, tokens["write"])
+        url = "https://blog.example.com/a-post"
+        assert "Already saved" not in client.get("/add/check", params={"url": url}).text
+        client.post("/api/v1/resources", json={"url": url, "why": "for the talk"},
+                    headers=auth(tokens["write"]))  # fmt: skip
+        check = client.get("/add/check", params={"url": url + "?utm_source=x"}).text
+        assert "Already saved" in check and "for the talk" in check and 'href="/r/' in check
+        assert "Already saved" in client.get("/add", params={"url": url}).text
+        assert client.get("/add/check", params={"url": "not a url"}).status_code == 200
