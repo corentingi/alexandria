@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import random
+import time
+
 import pytest
 
-from alexandria.chunking import chunk_markdown
+from alexandria.chunking import _hard_split, chunk_markdown
 from alexandria.config import Settings
 from alexandria.fetchers.base import http_client
 from alexandria.fetchers.git_repo import GitRepoFetcher
@@ -164,7 +167,34 @@ class TestPaths:
             safe_join(tmp_path, "..", "x")
 
 
+def _reference_split(paragraph: str, max_chars: int) -> list[str]:
+    """The original slicing implementation, kept to check the index walk against."""
+    if len(paragraph) <= max_chars:
+        return [paragraph]
+    parts, rest = [], paragraph
+    while len(rest) > max_chars:
+        cut = rest.rfind(" ", 0, max_chars)
+        cut = max_chars if cut <= 0 else cut
+        parts.append(rest[:cut].rstrip())
+        rest = rest[cut:].lstrip()
+    return [*parts, rest] if rest else parts
+
+
 class TestChunking:
+    def test_hard_split_matches_the_original(self) -> None:
+        rng = random.Random(7)
+        for _ in range(300):
+            text = "".join(rng.choice("ab  \t\nx") for _ in range(rng.randint(0, 400)))
+            limit = rng.randint(1, 40)
+            assert _hard_split(text, limit) == _reference_split(text, limit), (text, limit)
+
+    def test_hard_split_is_linear(self) -> None:
+        text = "word " * 2_000_000  # 10 MB, no blank line
+        started = time.perf_counter()
+        parts = _hard_split(text, 2000)
+        assert time.perf_counter() - started < 2  # the slicing version took about 3 s
+        assert "".join(parts).replace(" ", "") == text.replace(" ", "")
+
     def test_headings_and_paths(self) -> None:
         text = "intro\n\n# Title\n\npara\n\n## Sub\n\nmore\n\n# Other\n\nend"
         chunks = chunk_markdown(text)

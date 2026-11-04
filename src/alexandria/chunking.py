@@ -73,14 +73,18 @@ def _hard_split(paragraph: str, max_chars: int) -> list[str]:
     """A single paragraph longer than the cap is cut on whitespace."""
     if len(paragraph) <= max_chars:
         return [paragraph]
+    # Walks an index: slicing off the rest at each cut copied it every time, which was
+    # quadratic on a long extraction with no blank lines (32 MB took about 30 s).
     parts: list[str] = []
-    rest = paragraph
-    while len(rest) > max_chars:
-        cut = rest.rfind(" ", 0, max_chars)
-        if cut <= 0:
-            cut = max_chars
-        parts.append(rest[:cut].rstrip())
-        rest = rest[cut:].lstrip()
-    if rest:
-        parts.append(rest)
+    start, end = 0, len(paragraph)
+    while end - start > max_chars:
+        cut = paragraph.rfind(" ", start, start + max_chars)
+        if cut <= start:
+            cut = start + max_chars
+        parts.append(paragraph[start:cut].rstrip())
+        start = cut
+        while start < end and paragraph[start].isspace():
+            start += 1
+    if start < end:
+        parts.append(paragraph[start:])
     return parts
