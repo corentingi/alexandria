@@ -7,7 +7,8 @@ import httpx
 import pytest
 import respx
 
-from alexandria.extract import ExtractionError, detect_format, extract
+from alexandria.extract import ExtractionError, _decode, detect_format, extract
+from alexandria.fetchers.document import charset_of
 from alexandria.jobs import Worker
 from alexandria.library import Library, Update, parse_url_list
 from alexandria.models import FetchStatus, Kind, Status
@@ -89,6 +90,35 @@ class TestExtract:
         path = write(tmp_path, "bad.pdf", b"%PDF-1.4\n garbage")
         with pytest.raises(ExtractionError):
             extract(path, "pdf")
+
+
+class TestDecoding:
+    def test_utf8_survives_a_cut_and_stray_bytes(self) -> None:
+        cut = "Le café".encode()[:-1]  # the size cap split "é", a two-byte character
+        assert _decode(cut) == "Le caf"
+        stray = ("Le café est prêt. " * 200).encode() + b"\xff" + "déjà vu".encode()
+        decoded = _decode(stray)
+        assert "café" in decoded and "déjà vu" in decoded and decoded.count("\ufffd") == 1
+
+    def test_legacy_text_and_declared_charsets(self) -> None:
+        assert _decode("Crème brûlée".encode("cp1252")) == "Crème brûlée"
+        assert _decode("日本語のテキスト".encode("shift_jis"), "shift_jis") == "日本語のテキスト"
+        assert _decode(b"plain", "no-such-charset") == "plain"
+        assert charset_of('text/plain; charset="Shift_JIS"') == "Shift_JIS"
+        assert charset_of("text/plain") is None
+
+    async def test_fetched_text_uses_the_server_charset(
+        self, library: Library, worker: Worker
+    ) -> None:
+        url = "https://files.example/notes.txt"
+        body = "日本語のテキスト、長い文章。".encode("shift_jis")
+        with respx.mock() as router:
+            router.get(url).mock(return_value=httpx.Response(
+                200, content=body, headers={"content-type": "text/plain; charset=shift_jis"}
+            ))  # fmt: skip
+            result = await library.ingest(url, why="x")
+            await worker.drain()
+        assert "日本語のテキスト" in library.content(result.resource.id)["text"]
 
 
 class TestDocuments:

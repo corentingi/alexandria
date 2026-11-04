@@ -101,9 +101,13 @@ def detect_format(path: Path, filename: str | None = None, mime: str | None = No
     return candidate
 
 
-def extract(path: Path, fmt: str, url: str | None = None) -> Extraction:
+def extract(path: Path, fmt: str, url: str | None = None, charset: str | None = None) -> Extraction:
+    """``charset``: the encoding a server declared (``Content-Type``), for text formats."""
     try:
-        result = _EXTRACTORS[fmt](path, url)
+        if fmt in ("text", "markdown"):
+            result = _TEXT_EXTRACTORS[fmt](path, url, charset)
+        else:
+            result = _EXTRACTORS[fmt](path, url)
     except ExtractionError:
         raise
     except Exception as exc:  # a broken file must never crash the worker
@@ -376,15 +380,15 @@ def html_to_markdown(raw: bytes | str) -> str:
 # --------------------------------------------------------------------------- text
 
 
-def _text(path: Path, url: str | None) -> Extraction:
+def _text(path: Path, url: str | None, charset: str | None = None) -> Extraction:
     raw = _head(path, MAX_MARKDOWN_CHARS * 2)
-    text = _decode(raw)
+    text = _decode(raw, charset)
     first = next((line.strip("# ").strip() for line in text.splitlines() if line.strip()), "")
     return Extraction("text", text, first[:200] or None)
 
 
-def _markdown(path: Path, url: str | None) -> Extraction:
-    result = _text(path, url)
+def _markdown(path: Path, url: str | None, charset: str | None = None) -> Extraction:
+    result = _text(path, url, charset)
     result.format = "markdown"
     match = re.search(r"^#\s+(.+)$", result.markdown, flags=re.MULTILINE)
     if match:
@@ -392,20 +396,41 @@ def _markdown(path: Path, url: str | None) -> Extraction:
     return result
 
 
-def _decode(raw: bytes) -> str:
-    encoding = "utf-16" if raw[:2] in (b"\xff\xfe", b"\xfe\xff") else "utf-8-sig"
+_ASCII = bytes(range(0x80))
+
+
+def _decode(raw: bytes, charset: str | None = None) -> str:
+    """A BOM, else the declared charset, else UTF-8, else Windows-1252.
+
+    UTF-8 survives what used to garble a whole file: a multibyte character cut by the
+    size cap, and a few stray invalid bytes (replaced, not reinterpreted). Only text
+    that is mostly not UTF-8 is read as Windows-1252.
+    """
+    if raw[:2] in (b"\xff\xfe", b"\xfe\xff"):
+        return raw.decode("utf-16", errors="replace")
+    if charset:
+        try:
+            return raw.decode(charset.strip().strip('"'), errors="replace")
+        except LookupError:
+            pass  # an unknown charset name: sniff instead
     try:
-        return raw.decode(encoding)
-    except UnicodeDecodeError:
-        return raw.decode("cp1252", errors="replace")
+        return raw.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        if exc.start >= len(raw) - 3:  # only the cut at the end is incomplete
+            return raw[: exc.start].decode("utf-8-sig")
+    # Mostly valid UTF-8 (a stray byte among many accented characters) stays UTF-8; text
+    # whose non-ASCII bytes are mostly invalid as UTF-8 is a legacy encoding.
+    text = raw.decode("utf-8-sig", errors="replace")
+    non_ascii = len(raw.translate(None, _ASCII))
+    if text.count("\ufffd") * 20 <= non_ascii:
+        return text
+    return raw.decode("cp1252", errors="replace")
 
 
 # --------------------------------------------------------------------------- helpers
 
-_EXTRACTORS = {
-    "pdf": _pdf, "docx": _docx, "epub": _epub, "html": _html, "markdown": _markdown,
-    "text": _text,
-}  # fmt: skip
+_EXTRACTORS = {"pdf": _pdf, "docx": _docx, "epub": _epub, "html": _html}
+_TEXT_EXTRACTORS = {"markdown": _markdown, "text": _text}
 
 
 def _head(path: Path, limit: int) -> bytes:

@@ -36,6 +36,15 @@ class DocumentFetcher:
         return await extract_to(path, staging_dir, source.path, source.mime)
 
 
+def charset_of(content_type: str | None) -> str | None:
+    """The ``charset`` parameter of a Content-Type, if any."""
+    for param in (content_type or "").split(";")[1:]:
+        key, _, value = param.partition("=")
+        if key.strip().lower() == "charset" and value.strip():
+            return value.strip().strip('"')
+    return None
+
+
 async def extract_to(
     path: Path,
     staging_dir: Path,
@@ -43,7 +52,8 @@ async def extract_to(
     mime: str | None,
     url: str | None = None,
 ) -> SnapshotResult:
-    """Extract ``path`` into ``staging_dir``: content.md + extract.json."""
+    """Extract ``path`` into ``staging_dir``: content.md + extract.json. A charset in
+    ``mime`` (``text/plain; charset=shift_jis``) is used to decode text formats."""
     fmt = detect_format(path, filename, mime)
     meta: dict[str, Any] = {"format": fmt}
     report: dict[str, Any] = {"source": filename, "format": fmt, "mime": mime}
@@ -54,7 +64,7 @@ async def extract_to(
         meta["extraction"] = "unsupported"
     else:
         try:
-            result = await asyncio.to_thread(extract, path, fmt, url)
+            result = await asyncio.to_thread(extract, path, fmt, url, charset_of(mime))
         except ExtractionError as exc:
             meta["extraction"] = "failed"
             meta["extraction_error"] = str(exc)

@@ -64,8 +64,8 @@ class ArticleFetcher:
             artifacts.append(describe_file(original, "original"))
             # PDF, DOCX, EPUB, plain text…: extract text when we can (the original stays).
             doc = await extract_to(
-                original, staging_dir, result.final_url.rsplit("/", 1)[-1], content_type,
-                result.final_url,
+                original, staging_dir, result.final_url.rsplit("/", 1)[-1],
+                result.content_type, result.final_url,  # with its charset
             )  # fmt: skip
             artifacts.extend(doc.artifacts)
             meta.update(doc.meta)
