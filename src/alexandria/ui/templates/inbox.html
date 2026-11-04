@@ -4,11 +4,12 @@
 {% block content %}
 <div class="page-head">
   <div><h1>Inbox</h1><p>Saved without a reason.{% if user.can(ScopeLevel.WRITE) %} Say why each one matters, or archive it.{% endif %}</p></div>
+  {% if hits and user.can(ScopeLevel.WRITE) %}<p class="small muted keys">Keys: <kbd>j</kbd>/<kbd>k</kbd> move · <kbd>w</kbd> write a reason, <kbd>Enter</kbd> keeps · <kbd>a</kbd> archive · <kbd>o</kbd> open · <kbd>Esc</kbd> back to the list</p>{% endif %}
 </div>
 {% if hits %}
 <div class="results">
 {% for hit, row in hits %}
-  <article class="card inbox-item" id="inbox-{{ row.id }}">
+  <article class="card inbox-item" id="inbox-{{ row.id }}" tabindex="-1">
     <div class="row">
       {{ kind_icon(row.kind) }}
       <div class="grow">

@@ -288,6 +288,8 @@ details.edit[open] > summary { margin-bottom: 12px; }
 .inbox-item { padding: 16px 18px; }
 .inbox-item form { display: flex; gap: 8px; margin-top: 10px; }
 .inbox-item.done { opacity: .7; }
+.inbox-item:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+.keys kbd { font-size: .78rem; }
 
 /* ---- activity ---------------------------------------------------------------- */
 .jobs { width: 100%; border-collapse: collapse; font-size: .88rem; }

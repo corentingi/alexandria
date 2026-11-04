@@ -43,6 +43,63 @@
         && document.activeElement !== document.body) event.preventDefault();
   });
 
+  // Inbox triage from the keyboard: j/k move between cards, w writes a reason (Enter in
+  // it keeps), a archives, o opens, Escape returns from the field to the card. After a
+  // card is kept or archived, focus moves on to the next one still waiting.
+  function inboxCards() {
+    return Array.prototype.filter.call(
+      document.querySelectorAll(".inbox-item"), function (c) { return !c.classList.contains("done"); });
+  }
+  function focusCard(card, field) {
+    if (!card) return;
+    var input = field && card.querySelector("input[name=why]");
+    (input || card).focus();
+    card.scrollIntoView({ block: "nearest" });
+  }
+  document.addEventListener("keydown", function (event) {
+    if (!document.querySelector(".inbox-item") || event.ctrlKey || event.metaKey || event.altKey) return;
+    var target = event.target;
+    var card = target.closest && target.closest(".inbox-item");
+    if (event.key === "Escape" && card && target.tagName === "INPUT") { card.focus(); return; }
+    if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return;
+    var cards = inboxCards();
+    var at = cards.indexOf(card);
+    if (event.key === "j" || event.key === "ArrowDown") { focusCard(cards[Math.min(at + 1, cards.length - 1)]); }
+    else if (event.key === "k" || event.key === "ArrowUp") { focusCard(cards[Math.max(at - 1, 0)]); }
+    else if (event.key === "w" && card) { focusCard(card, true); }
+    else if (event.key === "a" && card) {
+      var archive = card.querySelector("form[action$='/status/archived'] button");
+      if (archive) archive.click();
+    }
+    else if (event.key === "o" && card) {
+      var link = card.querySelector("a.title");
+      if (link) window.location.href = link.href;
+    }
+    else return;
+    event.preventDefault();
+  });
+  var acted = null;
+  document.addEventListener("htmx:beforeRequest", function (event) {
+    var card = event.detail.elt.closest && event.detail.elt.closest(".inbox-item");
+    acted = card ? card.id : null;
+  });
+  document.addEventListener("htmx:afterSettle", function () {
+    if (!acted) return;
+    var done = document.getElementById(acted);
+    acted = null;
+    if (!done || !done.classList.contains("done")) return;  // refused: the card stays
+    var count = document.querySelector('.nav a[href="/inbox"] .count');
+    if (count) {
+      var left = parseInt(count.textContent, 10) - 1;
+      if (left > 0) count.textContent = String(left); else count.remove();
+    }
+    var next = done.nextElementSibling;
+    while (next && (!next.classList.contains("inbox-item") || next.classList.contains("done"))) {
+      next = next.nextElementSibling;
+    }
+    focusCard(next || inboxCards()[0], true);
+  });
+
   // "/" focuses the search box, Escape leaves it.
   document.addEventListener("keydown", function (event) {
     var target = event.target;
