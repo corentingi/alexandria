@@ -34,6 +34,7 @@
 <div class="r-layout">
   <div>
     <section class="card why-box {{ 'missing' if not r.why }}">
+      {% if user.can(ScopeLevel.WRITE) %}
       <details class="edit" {% if not r.why %}open{% endif %}>
         <summary>
           {% if r.why %}<p>{{ r.why }}</p>{% else %}<b>Why keep this?</b>{% endif %}
@@ -44,6 +45,8 @@
           <div class="row end"><button class="btn primary sm" type="submit">Save reason</button></div>
         </form>
       </details>
+      {% elif r.why %}<p>{{ r.why }}</p>
+      {% else %}<p class="muted">No reason given yet.</p>{% endif %}
     </section>
 
     <section class="card pad">
@@ -90,6 +93,7 @@
   <aside>
     <section class="card pad">
       <p class="section-title">Details</p>
+      {% if user.can(ScopeLevel.WRITE) %}
       <form method="post" action="/r/{{ r.slug }}/edit">
         <input type="hidden" name="csrf" value="{{ csrf }}">
         <label class="field"><span>Title</span><input type="text" name="title" value="{{ r.title }}"></label>
@@ -108,6 +112,13 @@
           <form method="post" action="/r/{{ r.slug }}/refetch"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn sm" type="submit">{{ icon("refresh", 14) }} {{ "Re-extract" if r.kind.value == "document" else "Re-fetch" }}</button></form>
         {% endif %}
       </div>
+      {% else %}
+      <dl class="kv">
+        <dt>Status</dt><dd>{{ r.status.value }}</dd>
+        <dt>Tags</dt><dd>{{ r.tags | join(" ") or "none" }}</dd>
+        <dt>Project</dt><dd>{{ r.project or "global" }}</dd>
+      </dl>
+      {% endif %}
     </section>
 
     {% set m = r.meta %}

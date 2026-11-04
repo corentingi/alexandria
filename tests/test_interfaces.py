@@ -200,6 +200,18 @@ class TestUi:
         bad = client.post("/login", data={"token": "nope"})
         assert bad.status_code == 401
 
+    def test_read_token_sees_no_write_controls(
+        self, client: TestClient, tokens: dict[str, str]
+    ) -> None:
+        made = client.post("/api/v1/notes", json={"title": "Alpha", "body": "x"},
+                           headers=auth(tokens["write"])).json()  # fmt: skip
+        self.login(client, tokens["read"])
+        page = client.get(f"/r/{made['id']}").text
+        assert "No reason given yet." in page and "Save details" not in page
+        assert "Save reason" not in page and "Archive</button>" not in page
+        inbox = client.get("/inbox").text
+        assert "Alpha" in inbox and "Keep</button>" not in inbox and "Archive" not in inbox
+
     def test_archive_from_the_inbox_stays_there(
         self, client: TestClient, tokens: dict[str, str]
     ) -> None:
