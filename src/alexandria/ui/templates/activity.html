@@ -24,10 +24,5 @@
   </section>
 </div>
 
-<nav class="counters" aria-label="Filter jobs">
-  {% for s, label in [("queued", "Queued"), ("running", "Running"), ("failed", "Failed"), ("done", "Done")] %}
-  <a class="card {{ s }} {{ 'on' if status == s }}" href="{{ '/activity' if status == s else '/activity?status=' ~ s }}"><b>{{ counts[s] }}</b><span>{{ label }}</span></a>
-  {% endfor %}
-</nav>
-<div id="jobs" hx-get="/activity{% if status %}?status={{ status }}{% endif %}" hx-trigger="every 3s" hx-swap="innerHTML">{% include "_jobs.html" %}</div>
+{% include "_activity_live.html" %}
 {% endblock %}

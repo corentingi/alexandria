@@ -34,6 +34,15 @@
     toast("Cannot reach the server. Check the connection and try again.");
   });
 
+  // A polled region is not refreshed while focus is inside it: the swap would take the
+  // focus away (a keyboard user on a Retry button would lose their place).
+  document.addEventListener("htmx:beforeRequest", function (event) {
+    var region = event.detail.elt;
+    var trigger = region.getAttribute && region.getAttribute("hx-trigger") || "";
+    if (trigger.indexOf("every ") === 0 && region.contains(document.activeElement)
+        && document.activeElement !== document.body) event.preventDefault();
+  });
+
   // "/" focuses the search box, Escape leaves it.
   document.addEventListener("keydown", function (event) {
     var target = event.target;

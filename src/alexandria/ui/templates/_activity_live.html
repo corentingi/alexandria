@@ -1,0 +1,10 @@
+{#- Counters and jobs, refreshed together: every 3 s while jobs are queued or running,
+    every 30 s otherwise (app.js skips a refresh while focus is inside, e.g. on Retry). -#}
+<div id="live" hx-get="/activity{% if status %}?status={{ status }}{% endif %}" hx-trigger="every {{ '3s' if counts.queued or counts.running else '30s' }}" hx-swap="outerHTML">
+<nav class="counters" aria-label="Filter jobs">
+  {% for s, label in [("queued", "Queued"), ("running", "Running"), ("failed", "Failed"), ("done", "Done")] %}
+  <a class="card {{ s }} {{ 'on' if status == s }}" href="{{ '/activity' if status == s else '/activity?status=' ~ s }}"><b>{{ counts[s] }}</b><span>{{ label }}</span></a>
+  {% endfor %}
+</nav>
+<div id="jobs">{% include "_jobs.html" %}</div>
+</div>

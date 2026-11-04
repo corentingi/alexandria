@@ -6,6 +6,7 @@ import json
 import re
 import time
 from collections.abc import Iterator
+from datetime import timedelta
 from typing import Any
 from urllib.parse import unquote_plus
 
@@ -16,6 +17,8 @@ from starlette.testclient import TestClient
 from alexandria.app import MCP_MAX_BODY
 from alexandria.auth import ScopeLevel, TokenStore
 from alexandria.config import Settings
+from alexandria.library import Library
+from alexandria.models import utcnow
 from tests.conftest import URL
 
 
@@ -218,6 +221,19 @@ class TestUi:
         assert res.status_code == 303 and res.headers["location"].startswith("/login")
         bad = client.post("/login", data={"token": "nope"})
         assert bad.status_code == 401
+
+    def test_activity_polls_fast_only_while_jobs_run(
+        self, client: TestClient, tokens: dict[str, str], library: Library
+    ) -> None:
+        self.login(client, tokens["read"])
+        hx = {"HX-Request": "true", "HX-Target": "live"}
+        idle = client.get("/activity", headers=hx).text
+        assert 'hx-trigger="every 30s"' in idle and 'class="counters"' in idle
+        assert "<html" not in idle
+        later = utcnow() + timedelta(hours=1)  # queued, not claimed by the running worker
+        library.index.enqueue("j1", "fetch", None, run_after=later)
+        busy = client.get("/activity", headers=hx).text
+        assert 'hx-trigger="every 3s"' in busy and "<b>1</b><span>Queued</span>" in busy
 
     def test_htmx_failures_are_plain_messages(
         self, client: TestClient, tokens: dict[str, str]

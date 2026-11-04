@@ -788,8 +788,8 @@ async def activity(request: Request, c: Ctx, who: User, status: str | None = Non
     by_status = index.job_counts()
     counts = {s: by_status.get(s, 0) for s in ("queued", "running", "failed", "done")}
     data: dict[str, Any] = {"jobs": jobs, "rows": rows, "status": status or "", "counts": counts}
-    if request.headers.get("hx-request") and request.headers.get("hx-target") == "jobs":
-        return render(request, "_jobs.html", **data)
+    if request.headers.get("hx-request") and request.headers.get("hx-target") == "live":
+        return render(request, "_activity_live.html", **data)
     data["chart"] = _capture_chart(c)
     data["recent"] = c.library.search("", SearchFilters(), 8)
     return render(request, "activity.html", **data)
