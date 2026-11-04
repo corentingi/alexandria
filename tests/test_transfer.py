@@ -103,6 +103,15 @@ class TestExport:
         info = await library.export_library("20261103T120001Z")
         assert len(info.parts) == 1 and info.parts[0].resources == 3
 
+    async def test_tmp_named_attachment_is_kept(self, library: Library, tmp_path: Path) -> None:
+        note = await library.create_note("Backup", "x")
+        await library.attach_upload(note.id, "backup.tmp", stream(b"keep me"))
+        (library.files.resource_dir(note.id) / "resource.md.tmp").write_text("half written")
+        info = await library.export_library("20261103T120003Z")
+        names = tar_names(library.settings.exports_dir / info.id / info.parts[0].name)
+        assert f"resources/{note.id}/attachments/backup.tmp" in names
+        assert f"resources/{note.id}/resource.md.tmp" not in names
+
     async def test_empty_library(self, library: Library) -> None:
         info = await library.export_library("20261103T120002Z")
         assert info.resources == 0 and len(info.parts) == 1

@@ -79,6 +79,11 @@ class ExportInfo:
         os.replace(tmp, directory / STATUS_FILE)
 
 
+# The only temp file ``FileStore`` leaves in a resource folder (an interrupted atomic write).
+# A user's own ``backup.tmp`` attachment is data and is exported.
+_TEMP_FILES = {"resource.md.tmp"}
+
+
 def _resource_files(resource_dir: Path) -> list[tuple[Path, str]]:
     """Regular files of one resource, as (path, archive name). Temp files are skipped."""
     out: list[tuple[Path, str]] = []
@@ -87,7 +92,7 @@ def _resource_files(resource_dir: Path) -> list[tuple[Path, str]]:
         dirs.sort()
         for name in sorted(files):
             path = Path(root) / name
-            if name.endswith(".tmp") or path.is_symlink() or not path.is_file():
+            if name in _TEMP_FILES or path.is_symlink() or not path.is_file():
                 continue
             out.append((path, path.relative_to(base).as_posix()))
     return out
