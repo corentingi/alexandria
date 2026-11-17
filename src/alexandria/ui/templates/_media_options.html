@@ -1,14 +1,22 @@
 {#- Video options on the add page and the resource page. Needs: media_levels, video_heights,
-    media_defaults; optionally choice (a resource's MediaChoice) and legend. -#}
+    media_defaults; optionally choice (a resource's MediaChoice) and legend.
+    One segmented row; the height shows only while "Video" is chosen, and only the chosen
+    option's hint shows (CSS :has, no script). -#}
 {%- set keep = (choice.keep.value if choice else media_defaults.keep.value) -%}
+{%- set keep = keep if keep in media_levels else "transcript" -%}
 {%- set height = (choice.max_height if choice and choice.max_height else media_defaults.max_height) -%}
 <fieldset class="media-options">
   <legend>{{ legend or "What to keep of this video" }}</legend>
-  {% for level, label, hint in [("transcript", "Transcript", "details, captions and thumbnail"), ("audio", "Audio too", "about 50 MB an hour"), ("video", "Video too", "about 0.5 to 1 GB an hour at 720p")] %}
-  <label class="choice"><input type="radio" name="keep" value="{{ level }}" {{ "checked" if level == keep or (level == "transcript" and keep not in media_levels) }} {{ "disabled" if level not in media_levels }}> <b>{{ label }}</b> <span class="muted small">{{ hint }}</span></label>
-  {% endfor %}
-  <label class="choice">Video height at most
-    <select name="max_height" {{ "disabled" if "video" not in media_levels }}>{% for h in video_heights %}<option value="{{ h }}" {{ "selected" if h == height }}>{{ h }}p</option>{% endfor %}</select>
-  </label>
+  <div class="media-pick">
+    <span class="seg">
+      {%- for level, label in [("transcript", "Transcript"), ("audio", "+ Audio"), ("video", "+ Video")] %}
+      <label><input class="sr-only" type="radio" name="keep" value="{{ level }}" {{ "checked" if level == keep }} {{ "disabled" if level not in media_levels }}>{{ label }}</label>
+      {%- endfor %}
+    </span>
+    {% if "video" in media_levels %}<select class="media-height" name="max_height" aria-label="Video height at most">{% for h in video_heights %}<option value="{{ h }}" {{ "selected" if h == height }}>up to {{ h }}p</option>{% endfor %}</select>{% endif %}
+  </div>
+  <small class="media-hint" data-for="transcript">Details, captions and thumbnail; searchable.</small>
+  <small class="media-hint" data-for="audio">The transcript, plus the audio: about 50 MB an hour.</small>
+  <small class="media-hint" data-for="video">The transcript, plus the video: about 0.5 to 1 GB an hour at 720p.</small>
   {% if media_levels | length == 1 %}<small class="muted">This server keeps transcripts only: its image has no ffmpeg.</small>{% endif %}
 </fieldset>
