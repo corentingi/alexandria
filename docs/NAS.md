@@ -3,6 +3,11 @@
 Alexandria is one container and one data folder. These steps use the image published on
 GitHub's registry, built for both Intel/AMD (most Synology "+" and QNAP models) and ARM.
 
+Videos (ADR-0021) can keep their audio or video file because the image includes ffmpeg
+and Deno. To keep transcripts only, build a slimmer image yourself:
+`docker build --build-arg MEDIA=slim -t alexandria:slim .`. Saved video files take
+space quickly: about 0.5 to 1 GB per hour at 720p.
+
 ## 1. The data folder
 
 Create it on the NAS's own disks (a shared folder such as `docker` is fine), **not** on a

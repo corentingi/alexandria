@@ -243,6 +243,10 @@ worker:
 - `https://github.com/<owner>/<repo>[/...|.git]` → `git_repo` with `meta.forge: github`.
   Canonical form: `https://github.com/<owner>/<repo>`, lowercase.
 - Any other URL ending in `.git`, or an explicit `kind: git_repo` → generic `git_repo`.
+- A single video on YouTube (also youtu.be, Shorts, embeds), Vimeo, Dailymotion, Twitch
+  or SoundCloud → `media`, with one canonical URL per video (for YouTube
+  `https://www.youtube.com/watch?v=<id>`, nothing else kept). An explicit `kind: media`
+  works for any other site yt-dlp supports. Playlists and channels stay articles.
 - Everything else → `article`.
 
 ### 8.2 Article fetcher
@@ -299,6 +303,21 @@ commits, stored as a single `.tar.gz` file.
 goes in the `resource.md` body. There is no fetch job; it is chunked and indexed
 immediately.
 
+### 8.4b Media fetcher (ADR-0021, ADR-0022)
+1. `yt-dlp -J` in a child process, through a guarded proxy on 127.0.0.1 that checks and
+   pins every connection: the details, nothing downloaded. Playlists and live streams
+   fail with a clear message.
+2. One captions track (a person's in the video's language, else the original automatic
+   track), the thumbnail and, if `media.keep` asks for it, the audio (as served, m4a
+   first) or the video (MP4, H.264 first, at most `max_height`). Fragments are
+   downloaded by yt-dlp itself; ffmpeg only merges local files.
+3. Snapshot: `content.md` (description, then the transcript in paragraphs of about a
+   minute under the chapters, each with its timestamp), `info.json` (without stream
+   URLs), `captions.<lang>.vtt`, `thumbnail.*`, `media.*`.
+4. Over `media.max_mb` or `media.max_duration_min`: the transcript is kept and
+   `meta.media_skipped` says why. A re-fetch hard-links the previous media file when the
+   same thing is asked.
+
 ### 8.5 Attachments
 - Upload: multipart via the API or UI. Filename is sanitized: basename only, a
   whitelist of characters, a numeric suffix on collision, and the resolved path must
@@ -354,9 +373,10 @@ Read scope:
   `ingest_url` (which returns its `job_id`), `attach_url` and `refetch`.
 
 Write scope:
-- `ingest_url(url, why?, tags?, project?, scope?)`
+- `ingest_url(url, why?, tags?, project?, scope?, keep?, max_height?)`: `keep` and
+  `max_height` choose what a video keeps (transcript, audio, video)
 - `create_note(title, body, why?, tags?, project?, scope?)`
-- `update_resource(ref, why?, notes?, tags?, status?, title?, project?, scope?)`
+- `update_resource(ref, why?, notes?, tags?, status?, title?, project?, scope?, keep?, max_height?)`
 - `attach_url(ref, url)`
 - `refetch(ref)`
 
@@ -444,6 +464,7 @@ fetch: { timeout_s: 30, max_redirects: 5, max_bytes: 20000000, user_agent: "Alex
 git: { full_history_max_mb: 500, shallow_depth: 1000, clone_timeout_s: 900, max_archive_mb: 2000 }
 github: { token: null }
 attachments: { max_mb: 500 }
+media: { keep: transcript, max_height: 720, downloads: null, max_mb: 4000, max_duration_min: 360, timeout_s: 3600 }
 worker: { concurrency: 2, max_attempts: 3 }
 security: { allow_private_hosts: [] }
 ```
@@ -479,7 +500,8 @@ metadata; relations between resources; browser extension; integration with the
 "control tower" project.
 
 ## 16. Deployment
-- Dockerfile based on `python:3.14-slim`, plus `git` and `ca-certificates`. Multi-arch
+- Dockerfile based on `python:3.14-slim`, plus `git`, `ca-certificates`, `ffmpeg` and
+  Deno (for videos; `--build-arg MEDIA=slim` leaves the last two out). Multi-arch
   build (amd64 and arm64). Non-root user, `VOLUME /data`, `EXPOSE 8080`, `HEALTHCHECK`
   on `/healthz`, entrypoint `alexandria serve`.
 - The volume **must be local storage on the host** (no NFS or SMB mount), because SQLite

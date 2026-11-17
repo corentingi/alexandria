@@ -29,6 +29,7 @@
 | Delete old snapshots (admin; never the last one) | `test_delete_snapshots`, `test_delete_snapshot_ui_and_api` |
 | Token management in the UI: create (secret shown once), scope, revoke; self and last admin protected (ADR-0018) | `test_manage_tokens`, `test_last_admin_is_kept`; by hand |
 | Library export/import in independent ~2 GB tar parts (ADR-0015) | `test_transfer.py` (round trip, any order, duplicates, hostile tars, UI) |
+| Videos with yt-dlp: transcript by default, audio or capped video on request, played in the page; every request through a guarded proxy (ADR-0021, ADR-0022) | `test_media.py`, `test_proxy.py`, `TestMedia` in `test_interfaces.py`; by hand against YouTube (transcript, audio, video, re-fetch reusing the file) |
 
 ## Known limits
 
@@ -48,6 +49,9 @@
 - No OCR: scanned PDFs are kept and flagged `extraction: poor`.
 - Sites behind logins or bot checks (Reddit, LinkedIn…) cannot be fetched; the workaround
   is attaching a PDF of the page (ADR-0017).
+- Videos: no speech-to-text, so a video without captions keeps only its description. No
+  cookies, so members-only and age-restricted videos fail. yt-dlp is pinned and needs
+  updating as sites change (not automated yet). Playlists are refused, not imported.
 - MCP cannot upload files (agents pass a URL to `ingest_url` instead).
 - Export/import: UI and CLI only (no REST/MCP); an export is consistent per resource, not
   for the whole library at one instant; import never merges edits made on both sides.

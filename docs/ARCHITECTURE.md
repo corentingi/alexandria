@@ -22,8 +22,8 @@ changes data. `views.py` holds the JSON shapes shared by REST and MCP.
    (`storage/files.py`), indexes it (`storage/index.py`) and enqueues a `fetch` job.
 2. `jobs.Worker` (N asyncio tasks in the server process) claims the job with an atomic
    `UPDATE … RETURNING`, and calls `Library._job_fetch`.
-3. The kind's fetcher (`fetchers/article.py`, `fetchers/git_repo.py`) works in
-   `tmp/<job-id>/` and returns a `SnapshotResult`.
+3. The kind's fetcher (`fetchers/article.py`, `fetchers/git_repo.py`,
+   `fetchers/media.py`) works in `tmp/<job-id>/` and returns a `SnapshotResult`.
 4. Under the resource's asyncio lock, the staging dir is renamed to
    `snapshots/<timestamp>/`, `resource.md` is re-read (a human may have edited it),
    updated and rewritten, then chunks and FTS rows are rebuilt.
@@ -64,7 +64,9 @@ See DESIGN.md §5. Additions: `tokens.yaml` (ADR-0003), `session_secret`, and th
 | `storage/index.py` | SQLite schema, upserts, rebuild, search, job queue |
 | `chunking.py` | Deterministic Markdown chunking |
 | `extract.py` | Text extraction: PDF (pypdf), DOCX, EPUB, HTML, Markdown, text (ADR-0012) |
-| `fetchers/` | `base.download` (guarded streaming GET), article, git, document, attachment |
+| `fetchers/` | `base.download` (guarded streaming GET), article, git, document, attachment, media (yt-dlp) |
+| `proxy.py` | Guarded HTTP proxy on 127.0.0.1 for child processes that fetch (yt-dlp, ADR-0022) |
+| `transcript.py` | WebVTT captions to a Markdown transcript |
 | `library.py` | All operations + job handlers |
 | `jobs.py` | Worker loop, retries |
 | `walls.py` | Known login/bot/paywall sites and bot-check detection |

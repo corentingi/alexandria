@@ -10,6 +10,10 @@ it. Agents read and write through MCP, you use a small web UI. One container, on
 - **Documents** — upload PDF, DOCX, EPUB, HTML, Markdown or text; the original is kept and
   its text extracted and indexed (links to such files get the same treatment). Any other
   file is kept too, ready to be analysed later.
+- **Videos** — YouTube, Vimeo, Dailymotion, Twitch, SoundCloud (and any site yt-dlp
+  supports, on request): details, thumbnail and the captions as a searchable transcript;
+  the audio, or the video up to a chosen height, when asked
+  ([ADR-0021](docs/adrs/0021-video-and-audio-with-yt-dlp.md)).
 - **Notes** — Markdown, searchable at once.
 - **Bulk import** — paste links or upload a browser bookmarks export.
 - **Files are the truth** — every resource is a folder with a `resource.md`; the SQLite
