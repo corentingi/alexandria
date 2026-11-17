@@ -152,6 +152,7 @@ class ImportBody(_Strict):
     why: str | None = None
     tags: list[str] = Field(default_factory=list)
     project: str | None = None
+    media: MediaChoice | None = None  # for the videos among the links
 
 
 @router.post("/import", status_code=202)
@@ -161,7 +162,7 @@ async def import_urls(body: ImportBody, c: Ctx, who: Writer) -> dict[str, Any]:
     Returns the job: `GET /jobs/{job_id}` shows its progress, then its report
     (`payload.report`: created, duplicates, errors)."""
     job_id, count = c.library.start_url_import(
-        body.text, body.why, body.tags, body.project, who.name
+        body.text, body.why, body.tags, body.project, who.name, media=body.media
     )
     c.enqueued()
     return {"job_id": job_id, "links": count}

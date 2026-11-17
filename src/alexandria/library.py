@@ -479,13 +479,17 @@ class Library:
         tags: list[str] | None = None,
         project: str | None = None,
         created_by: str | None = None,
+        media: MediaChoice | None = None,
     ) -> ImportReport:
         """Ingest every link in a plain list or a browser bookmarks export, now (the CLI).
-        The UI and the API queue the same work as a job: ``start_url_import``."""
+        The UI and the API queue the same work as a job: ``start_url_import``. ``media``
+        applies to the videos among the links."""
+        if media is not None:
+            self._media_choice(media)  # refuse audio on a slim server once, not per link
         report = ImportReport()
         entries = _capped_entries(text, report)
         for entry in entries:
-            await self._import_entry(entry, why, tags, project, created_by, report)
+            await self._import_entry(entry, why, tags, project, created_by, media, report)
         return report
 
     def start_url_import(
@@ -496,6 +500,7 @@ class Library:
         project: str | None = None,
         created_by: str | None = None,
         name: str | None = None,
+        media: MediaChoice | None = None,
     ) -> tuple[str, int]:
         """Queue the import of every link in ``text``. Returns (job id, number of links).
 
@@ -507,9 +512,12 @@ class Library:
         if not entries:
             raise InvalidInput("no links found")
         _scope(None, project)  # reject a bad project name now, not in the job
+        if media is not None:
+            self._media_choice(media)
         payload = {
             "name": name or "pasted links", "entries": [list(e) for e in entries],
             "why": why, "tags": tags or [], "project": project, "created_by": created_by,
+            "media": media.model_dump(mode="json") if media else None,
             "position": 0, "report": asdict(report),
         }  # fmt: skip
         return self._enqueue("import_urls", None, payload), len(entries)
@@ -518,11 +526,12 @@ class Library:
         payload = dict(job.payload)
         entries = payload["entries"]
         report = ImportReport(**payload["report"])
+        media = MediaChoice.model_validate(payload["media"]) if payload.get("media") else None
         for position in range(int(payload["position"]), len(entries)):
             url, tags, title = entries[position]
             await self._import_entry(
                 (url, tags, title), payload["why"], payload["tags"], payload["project"],
-                payload["created_by"], report,
+                payload["created_by"], media, report,
             )  # fmt: skip
             if position % 50 == 49:
                 payload |= {"position": position + 1, "report": asdict(report)}
@@ -542,13 +551,14 @@ class Library:
         tags: list[str] | None,
         project: str | None,
         created_by: str | None,
+        media: MediaChoice | None,
         report: ImportReport,
     ) -> None:
         url, extra_tags, title = entry
         try:
             result = await self.ingest(
                 url, why=why, tags=[*(tags or []), *extra_tags], project=project, title=title,
-                created_by=created_by,
+                created_by=created_by, media=media,
             )  # fmt: skip
         except InvalidInput as exc:
             report.errors.append(f"{url}: {exc}")

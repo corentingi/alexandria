@@ -657,3 +657,28 @@ class TestMedia:
         data = wait_ready(client, rid, tokens["read"])
         assert data["media"] == {"keep": "video", "max_height": 480}
         assert "<video controls" in client.get(f"/r/{rid}").text
+
+    def test_import(self, client: TestClient, tokens: dict[str, str], settings: Settings) -> None:
+        w, r = auth(tokens["write"]), tokens["read"]
+        text = f"{self.VIDEO}\n{URL}"
+        audio = {"text": text, "media": {"keep": "audio"}}
+        res = client.post("/api/v1/import", json=audio, headers=w)
+        assert res.status_code == 400 and "transcript" in res.json()["detail"]  # before the job
+
+        csrf = TestUi().login(client, tokens["write"])
+        assert "For the videos among these links" in client.get("/add?tab=import").text
+        settings.media.downloads = True
+        form = {"csrf": csrf, "text": text, "keep": "video", "max_height": "480"}
+        assert client.post("/import", data=form, follow_redirects=False).status_code == 303
+        jobs = client.get("/api/v1/jobs", headers=auth(r)).json()["jobs"]
+        job_id = next(j["id"] for j in jobs if j["type"] == "import_urls")
+        assert wait_job(client, job_id, r)["payload"]["report"]["created"] == 2
+
+        def media(url: str) -> object:
+            found = client.get("/api/v1/lookup", params={"url": url}, headers=auth(r)).json()
+            return (
+                client.get(f"/api/v1/resources/{found['id']}", headers=auth(r)).json().get("media")
+            )
+
+        assert media(self.VIDEO) == {"keep": "video", "max_height": 480}
+        assert media(URL) is None

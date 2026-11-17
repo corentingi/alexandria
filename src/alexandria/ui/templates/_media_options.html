@@ -1,9 +1,9 @@
 {#- Video options on the add page and the resource page. Needs: media_levels, video_heights,
-    media_defaults; optionally choice (a resource's MediaChoice). -#}
+    media_defaults; optionally choice (a resource's MediaChoice) and legend. -#}
 {%- set keep = (choice.keep.value if choice else media_defaults.keep.value) -%}
 {%- set height = (choice.max_height if choice and choice.max_height else media_defaults.max_height) -%}
 <fieldset class="media-options">
-  <legend>What to keep of this video</legend>
+  <legend>{{ legend or "What to keep of this video" }}</legend>
   {% for level, label, hint in [("transcript", "Transcript", "details, captions and thumbnail"), ("audio", "Audio too", "about 50 MB an hour"), ("video", "Video too", "about 0.5 to 1 GB an hour at 720p")] %}
   <label class="choice"><input type="radio" name="keep" value="{{ level }}" {{ "checked" if level == keep or (level == "transcript" and keep not in media_levels) }} {{ "disabled" if level not in media_levels }}> <b>{{ label }}</b> <span class="muted small">{{ hint }}</span></label>
   {% endfor %}

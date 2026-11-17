@@ -41,6 +41,7 @@
     <input type="file" name="bookmarks" accept=".html,.htm,.txt,.md">
     <small>The HTML file exported by Firefox, Chrome, Safari or Pinboard. Their tags are kept.</small>
   </label>
+  {% set legend = "For the videos among these links (YouTube, Vimeo…)" %}{% include "_media_options.html" %}
   <label class="field"><span>Why?</span><input type="text" name="why" placeholder="Optional; applies to every link"></label>
   <div class="grid2">
     <label class="field"><span>Tags</span><input type="text" name="tags" list="tag-options" data-tag-input autocomplete="off" placeholder="imported"></label>

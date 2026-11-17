@@ -21,7 +21,9 @@ the separate video and audio streams above 360p.
 - Each media resource records what to keep, in `resource.md` (`media.keep`, a human
   field): `transcript` (default), `audio` or `video`, and for video a height cap (360 to
   2160, default `media.max_height`, 720). The choice can change later; it applies from
-  the next fetch.
+  the next fetch. A bulk import takes one choice for all the videos among its
+  links (the other links ignore it); the import stays its own tab, since one link gets
+  live checks and a redirect to its page that thousands of links cannot.
 - A snapshot always holds `content.md` (title, description, transcript), `info.json`
   (details without the stream URLs, which expire), the captions and the thumbnail. The
   transcript is what search and agents read. The audio or video file is added when asked.

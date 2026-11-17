@@ -544,6 +544,8 @@ async def import_links(
     why: Annotated[str, Form()] = "",
     tags: Annotated[str, Form()] = "",
     project: Annotated[str, Form()] = "",
+    keep: Annotated[str, Form()] = "",
+    max_height: Annotated[str, Form()] = "",
 ) -> Response:
     need(who, ScopeLevel.WRITE)
     form = await request.form()
@@ -555,8 +557,9 @@ async def import_links(
     name = upload.filename if isinstance(upload, StarletteUpload) and upload.filename else None
     try:
         _, count = c.library.start_url_import(
-            text, why or None, _split_tags(tags), project or None, who.name, name
-        )
+            text, why or None, _split_tags(tags), project or None, who.name, name,
+            media=c.library.media_choice(keep, max_height),
+        )  # fmt: skip
     except InvalidInput as exc:
         return back("/add?tab=import", error=str(exc))
     c.enqueued()

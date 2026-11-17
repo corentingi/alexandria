@@ -173,12 +173,23 @@ def import_(
     why: str | None = None,
     tag: Annotated[list[str] | None, typer.Option()] = None,
     project: str | None = None,
+    keep: Annotated[
+        str | None, typer.Option(help="For the videos: transcript, audio or video")
+    ] = None,
+    max_height: Annotated[
+        int | None, typer.Option(help="For --keep video: 360, 480, 720, 1080, 1440 or 2160")
+    ] = None,
 ) -> None:
     """Save every link in a file."""
     _logging("WARNING")
     library = _library()
     text = source.read_text(encoding="utf-8", errors="replace")
-    report = asyncio.run(library.import_urls(text, why, tag or [], project, "cli"))
+    try:
+        media = library.media_choice(keep, max_height)
+        report = asyncio.run(library.import_urls(text, why, tag or [], project, "cli", media))
+    except InvalidInput as exc:
+        _fail(str(exc))
+        return
     for error in report.errors:
         typer.secho(error, fg="yellow", err=True)
     typer.echo(
