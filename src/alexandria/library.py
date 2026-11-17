@@ -19,6 +19,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+from pydantic import ValidationError
+
 from alexandria.chunking import Chunk, chunk_markdown
 from alexandria.config import Settings
 from alexandria.extract import detect_format
@@ -154,6 +156,16 @@ class Library:
     def media_levels(self) -> list[str]:
         """What a media resource can keep on this server (transcript only without ffmpeg)."""
         return [level.value for level in allowed_levels(self.settings)]
+
+    @staticmethod
+    def media_choice(keep: str | None, max_height: int | str | None = None) -> MediaChoice | None:
+        """A ``MediaChoice`` from interface parameters; ``None`` when ``keep`` is not given."""
+        if not keep:
+            return None
+        try:
+            return MediaChoice.model_validate({"keep": keep, "max_height": max_height or None})
+        except ValidationError as exc:
+            raise InvalidInput("; ".join(e["msg"] for e in exc.errors())) from exc
 
     def _media_choice(self, choice: MediaChoice | None) -> MediaChoice:
         choice = choice or MediaChoice(keep=self.settings.media.keep)

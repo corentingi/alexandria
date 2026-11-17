@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import sys
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -9,14 +8,13 @@ import pytest
 
 from alexandria.config import Settings
 from alexandria.fetchers.base import PermanentFetchError
-from alexandria.fetchers.media import MediaFetcher, MediaTools, _error, _pick_captions
+from alexandria.fetchers.media import _error, _pick_captions
 from alexandria.jobs import Worker
 from alexandria.library import InvalidInput, Library, Update
 from alexandria.models import FetchStatus, Kind, MediaChoice, MediaLevel
 from alexandria.transcript import parse_vtt, plain_text_markdown, transcript_markdown
 from alexandria.urls import detect
 
-FAKE = str(Path(__file__).with_name("fake_ytdlp.py"))
 VIDEO = "https://youtu.be/jNQXAC9IVRw?si=share"
 
 
@@ -141,12 +139,8 @@ class TestErrors:
 
 
 @pytest.fixture
-async def media_library(settings: Settings, tmp_path: Path) -> AsyncIterator[Library]:
-    log_dir = tmp_path / "fake-ytdlp"
-    log_dir.mkdir()
-    fetcher = MediaFetcher(settings, tools=MediaTools(None, None),
-                           command=[sys.executable, FAKE, str(log_dir)])  # fmt: skip
-    lib = Library(settings, fetchers={Kind.MEDIA: fetcher})
+async def media_library(settings: Settings) -> AsyncIterator[Library]:
+    lib = Library(settings)  # yt-dlp is the fake one (conftest)
     yield lib
     lib.close()
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import socket
+import sys
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from alexandria import security
 from alexandria.app import create_app
 from alexandria.auth import ScopeLevel, TokenStore
 from alexandria.config import Settings, load_settings
+from alexandria.fetchers import media
 from alexandria.fetchers.article import ArticleFetcher
 from alexandria.fetchers.git_repo import GitRepoFetcher
 from alexandria.jobs import Worker
@@ -31,10 +33,19 @@ async def fake_resolver(host: str, port: int) -> list[str]:
     return [PUBLIC_IP]
 
 
+FAKE_YT_DLP = str(Path(__file__).with_name("fake_ytdlp.py"))
+
+
 @pytest.fixture(autouse=True)
-def no_network(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+def no_network(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[None]:
     """The suite never touches DNS or the network (acceptance criterion 10)."""
     previous = security.set_resolver(fake_resolver)
+    # yt-dlp is a child process: the socket patches below would not reach it.
+    (tmp_path / "fake-ytdlp").mkdir()
+    monkeypatch.setattr(
+        media, "YT_DLP", [sys.executable, FAKE_YT_DLP, str(tmp_path / "fake-ytdlp")]
+    )
+    monkeypatch.setattr(media, "find_tools", lambda: media.MediaTools(None, None))
 
     def refuse(*args: object, **kwargs: object) -> None:
         raise RuntimeError("network access in tests")

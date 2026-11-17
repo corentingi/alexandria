@@ -57,6 +57,8 @@ _DROPPED_INFO_KEYS = {
     "_version", "filename", "_filename",
 }  # fmt: skip
 _MB = 1_000_000
+# How yt-dlp is started; the test suite swaps in a fake.
+YT_DLP = [sys.executable, "-m", "yt_dlp"]
 
 
 @dataclass(frozen=True)
@@ -118,8 +120,7 @@ class MediaFetcher:
     ) -> None:
         self.settings = settings
         self._tools = tools
-        # Tests run a fake yt-dlp script here.
-        self.command = command or [sys.executable, "-m", "yt_dlp"]
+        self.command = command or list(YT_DLP)
         self.files = FileStore(settings.data_dir)
 
     @property

@@ -120,6 +120,7 @@ def resource_detail(
             "status": resource.status.value,
             "fetch_status": resource.fetch_status.value,
             "fetch_error": resource.fetch_error,
+            "media": resource.media.model_dump(mode="json") if resource.media else None,
             "captured_at": iso(resource.captured_at),
             "updated_at": iso(resource.updated_at),
             "created_by": resource.created_by,

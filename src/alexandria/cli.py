@@ -82,15 +82,24 @@ def add(
     why: Annotated[str | None, typer.Option(help="Why is this worth keeping?")] = None,
     tag: Annotated[list[str] | None, typer.Option(help="Repeatable")] = None,
     project: str | None = None,
+    keep: Annotated[
+        str | None, typer.Option(help="For a video: transcript, audio or video")
+    ] = None,
+    max_height: Annotated[
+        int | None, typer.Option(help="For --keep video: 360, 480, 720, 1080, 1440 or 2160")
+    ] = None,
     now: Annotated[bool, typer.Option("--now", help="Fetch in this process")] = False,
 ) -> None:
-    """Save a URL (article or git repository)."""
+    """Save a URL (article, git repository or video)."""
     _logging("WARNING")
     library = _library()
 
     async def run() -> None:
         try:
-            result = await library.ingest(url, why, tag or [], project=project, created_by="cli")
+            result = await library.ingest(
+                url, why, tag or [], project=project, created_by="cli",
+                media=library.media_choice(keep, max_height),
+            )  # fmt: skip
         except InvalidInput as exc:
             _fail(str(exc))
             return

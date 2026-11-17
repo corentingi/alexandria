@@ -21,14 +21,16 @@ from alexandria.auth import Principal, ScopeLevel, TokenStore, bearer
 from alexandria.context import AppContext
 from alexandria.library import InvalidInput, NotFound, Update
 from alexandria.models import Kind, Status
+from alexandria.models import MediaLevel as MediaKeep
 from alexandria.models import Scope as ResourceScope
 from alexandria.storage.index import SearchFilters
 from alexandria.views import job_view, resource_detail, resource_summary, search_result
 from alexandria.walls import site_warning
 
 INSTRUCTIONS = """\
-Alexandria is the user's personal knowledge base: articles, git repositories and notes they \
-(or other agents) saved, each with a human-written reason ("why").
+Alexandria is the user's personal knowledge base: articles, git repositories, documents, \
+videos (as transcripts) and notes they (or other agents) saved, each with a human-written \
+reason ("why").
 
 Use `search` first; it returns ids, slugs and snippets. `get_resource` gives metadata and a \
 chunk list; `get_content` reads text, by chunk or by offset. Any tool taking `ref` accepts an \
@@ -209,11 +211,18 @@ def build_mcp(ctx: AppContext) -> MCPServer[Any]:
         tags: list[str] | None = None,
         project: str | None = None,
         scope: ResourceScope | None = None,
+        keep: MediaKeep | None = None,
+        max_height: int | None = None,
     ) -> dict[str, Any]:
-        """Save a web page or git repository. Fetching happens in the background.
+        """Save a web page, git repository or video. Fetching happens in the background.
 
-        GitHub URLs (and URLs ending in .git) are archived as git repositories, anything else
-        as an article. If the URL is already saved, returns the existing resource with
+        GitHub URLs (and URLs ending in .git) are archived as git repositories; YouTube,
+        Vimeo, Dailymotion, Twitch and SoundCloud videos as media (details, thumbnail and a
+        searchable transcript from the captions); anything else as an article. For media,
+        `keep` adds the "audio" or the "video" file (capped at `max_height`: 360, 480, 720,
+        1080, 1440 or 2160); leave it out unless the user asked for the file.
+
+        If the URL is already saved, returns the existing resource with
         duplicate=true; your `why` is used only if it had none (`added` lists what was
         added: "why", "tags"). Always give `why`. A `warning` means the site
         usually blocks fetches or needs a login: tell the user, who can attach a PDF of the
@@ -221,8 +230,9 @@ def build_mcp(ctx: AppContext) -> MCPServer[Any]:
         """
         principal = who(context, ScopeLevel.WRITE)
         result = await lib.ingest(
-            url, why=why, tags=tags, scope=scope, project=project, created_by=principal.name
-        )
+            url, why=why, tags=tags, scope=scope, project=project, created_by=principal.name,
+            media=lib.media_choice(keep, max_height),
+        )  # fmt: skip
         ctx.enqueued()
         r = result.resource
         return {
@@ -265,14 +275,20 @@ def build_mcp(ctx: AppContext) -> MCPServer[Any]:
         title: str | None = None,
         project: str | None = None,
         scope: ResourceScope | None = None,
+        keep: MediaKeep | None = None,
+        max_height: int | None = None,
     ) -> dict[str, Any]:
         """Change a resource. Omitted fields are left as they are.
 
         `tags` and `notes` replace the current values (read them with get_resource first).
-        Giving a `why` to an inbox resource moves it to 'kept'.
+        Giving a `why` to an inbox resource moves it to 'kept'. For media, `keep` and
+        `max_height` take effect at the next fetch: call refetch after changing them.
         """
         who(context, ScopeLevel.WRITE)
-        resource = await lib.update(ref, Update(why, notes, tags, status, title, project, scope))
+        media = lib.media_choice(keep, max_height)
+        resource = await lib.update(
+            ref, Update(why, notes, tags, status, title, project, scope, media)
+        )
         return {
             "id": resource.id,
             "slug": resource.slug,

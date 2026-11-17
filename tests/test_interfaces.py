@@ -590,3 +590,37 @@ class TestReviewRegressions:
         wait_ready(client, rid, tokens["read"])
         detail = tool(client, tokens["read"], "get_resource", ref=rid)["structuredContent"]
         assert "meta" not in detail and detail["untrusted_meta"]["language"] == "en"
+
+
+class TestMedia:
+    VIDEO = "https://www.youtube.com/watch?v=jNQXAC9IVRw&t=4s"
+
+    def test_rest(self, client: TestClient, tokens: dict[str, str], settings: Settings) -> None:
+        w = auth(tokens["write"])
+        audio = {"url": self.VIDEO, "media": {"keep": "audio"}}
+        res = client.post("/api/v1/resources", json=audio, headers=w)
+        assert res.status_code == 400 and "transcript" in res.json()["detail"]
+        bad = {"url": self.VIDEO, "media": {"keep": "video", "max_height": 700}}
+        assert client.post("/api/v1/resources", json=bad, headers=w).status_code == 422
+
+        res = client.post("/api/v1/resources", json={"url": self.VIDEO, "why": "zoo"}, headers=w)
+        assert res.status_code == 202
+        data = wait_ready(client, res.json()["id"], tokens["read"])
+        assert data["kind"] == "media" and data["fetch_status"] == "ready", data
+        assert data["media"] == {"keep": "transcript", "max_height": None}
+        assert data["meta"]["channel"] == "jawed" and data["slug"] == "me-at-the-zoo"
+
+        settings.media.downloads = True
+        patch = {"media": {"keep": "video", "max_height": 1080}}
+        res = client.patch(f"/api/v1/resources/{data['id']}", json=patch, headers=w)
+        assert res.status_code == 200 and res.json()["media"]["max_height"] == 1080
+
+    def test_mcp(self, client: TestClient, tokens: dict[str, str]) -> None:
+        w = tokens["write"]
+        out = tool(client, w, "ingest_url", url=self.VIDEO, why="zoo", keep="transcript")
+        assert out["structuredContent"]["kind"] == "media"
+        rid = out["structuredContent"]["id"]
+        out = tool(client, w, "update_resource", ref=rid, keep="audio")
+        assert out["isError"] and "transcript" in out["content"][0]["text"]  # this server
+        out = tool(client, w, "update_resource", ref=rid, keep="video", max_height=700)
+        assert out["isError"] and "max_height" in out["content"][0]["text"]

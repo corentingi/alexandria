@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from alexandria.auth import Principal, ScopeLevel, bearer
 from alexandria.context import AppContext
 from alexandria.library import NotFound, Update
-from alexandria.models import Kind, Scope, Status
+from alexandria.models import Kind, MediaChoice, Scope, Status
 from alexandria.storage.index import SearchFilters
 from alexandria.views import job_view, resource_detail, resource_summary, search_result
 from alexandria.walls import site_warning
@@ -59,6 +59,8 @@ class IngestBody(_Strict):
     scope: Scope | None = None
     kind: Kind | None = None
     title: str | None = None
+    # For a video or audio page: what to keep; the server default when omitted.
+    media: MediaChoice | None = None
 
 
 class NoteBody(_Strict):
@@ -78,6 +80,7 @@ class PatchBody(_Strict):
     title: str | None = None
     project: str | None = None
     scope: Scope | None = None
+    media: MediaChoice | None = None  # applies from the next fetch
 
 
 class AttachUrlBody(_Strict):
@@ -100,6 +103,7 @@ async def ingest(body: IngestBody, c: Ctx, who: Writer) -> JSONResponse:
         kind=body.kind,
         title=body.title,
         created_by=who.name,
+        media=body.media,
     )
     c.enqueued()
     r = result.resource
@@ -178,7 +182,7 @@ async def get_resource(ref: str, c: Ctx, _: Reader) -> dict[str, Any]:
 
 @router.patch("/resources/{ref}")
 async def patch_resource(ref: str, body: PatchBody, c: Ctx, _: Writer) -> dict[str, Any]:
-    resource = await c.library.update(ref, Update(**body.model_dump()))
+    resource = await c.library.update(ref, Update(**dict(body)))
     return _detail(c, resource.id)
 
 
