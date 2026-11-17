@@ -8,9 +8,9 @@
 <meta name="htmx-config" content='{"includeIndicatorStyles": false, "allowEval": false}'>
 <title>{% block title %}{% endblock %}{% if self.title() %} · {% endif %}Alexandria</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232c4c9c' stroke-width='2'%3E%3Cpath d='M3 21h18M5 21V10M9 21V10M15 21V10M19 21V10M2 10h20L12 3z'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="/static/app.css?v={{ version }}">
+<link rel="stylesheet" href="/static/app.css?v={{ build.version }}">
 <script src="/static/htmx.min.js?v=2.0.4" defer></script>
-<script src="/static/app.js?v={{ version }}" defer></script>
+<script src="/static/app.js?v={{ build.version }}" defer></script>
 </head>
 <body>
 {% block body %}
@@ -28,7 +28,7 @@
     {% if user %}<div class="foot">
       <span class="who">Signed in as <b>{{ user.name }}</b> ({{ user.scope.label }})<br></span>
       <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn ghost sm" type="submit" aria-label="Sign out">{{ icon("logout", 15) }}<span class="label">Sign out</span></button></form>
-      <span class="muted ver">v{{ version }}</span>
+      <span class="muted ver">v{{ build.version }}{% if build.date %} · built {{ build.date }}{% endif %}</span>
     </div>{% endif %}
   </aside>
   <main class="main"><div class="wrap {% block wrap %}{% endblock %}">

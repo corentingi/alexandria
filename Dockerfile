@@ -23,6 +23,10 @@ FROM python:3.14-slim AS media-slim
 RUN mkdir -p /media/bin
 FROM media-${MEDIA} AS media
 
+# The repository's .git, given as the "git" build context (docker-compose.yml, CI), names
+# the build: `git describe`. Without it this stage is empty and only the date is recorded.
+FROM scratch AS git
+
 FROM python:3.14-slim
 ARG MEDIA
 RUN apt-get update \
@@ -33,6 +37,9 @@ RUN apt-get update \
     && mkdir /data && chown alexandria:alexandria /data
 COPY --from=media /media/bin/ /usr/local/bin/
 COPY --from=build /app /app
+RUN --mount=type=bind,from=git,target=/tmp/git \
+    { git -c safe.directory='*' --git-dir=/tmp/git describe --tags --always 2>/dev/null || echo; \
+      date -u +%Y-%m-%d; } > /app/src/alexandria/_build.txt
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     ALEXANDRIA_DATA_DIR=/data \

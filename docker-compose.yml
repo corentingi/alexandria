@@ -1,7 +1,9 @@
 services:
   alexandria:
     image: alexandria:latest
-    build: .
+    build:
+      context: .
+      additional_contexts: ["git=.git"]  # names the build (git describe)
     ports: ["8080:8080"]
     # Must be local storage on the host (no NFS/SMB): SQLite WAL needs working locks.
     volumes: ["${ALEXANDRIA_VOLUME:-./data}:/data"]

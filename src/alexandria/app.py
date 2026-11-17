@@ -17,8 +17,8 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from alexandria import __version__
 from alexandria.auth import Principal, ScopeLevel, TokenStore
+from alexandria.build import build
 from alexandria.config import Settings
 from alexandria.context import AppContext
 from alexandria.jobs import Worker
@@ -66,7 +66,9 @@ def create_app(
         if run_worker:
             await ctx.worker.stop()
 
-    api = FastAPI(title="Alexandria", version=__version__, lifespan=lifespan, docs_url="/api/docs")
+    api = FastAPI(
+        title="Alexandria", version=build().version, lifespan=lifespan, docs_url="/api/docs"
+    )
     api.state.ctx = ctx
 
     @api.exception_handler(NotFound)
@@ -93,7 +95,7 @@ def create_app(
 
     @api.get("/healthz", include_in_schema=False)
     async def healthz() -> dict[str, Any]:
-        return {"ok": True, "version": __version__}
+        return {"ok": True, "version": build().version}
 
     from alexandria.api.routes import router as api_router
     from alexandria.ui.routes import router as ui_router

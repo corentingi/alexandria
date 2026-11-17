@@ -30,8 +30,8 @@ from markdown_it import MarkdownIt
 from markupsafe import Markup, escape
 from starlette.datastructures import UploadFile as StarletteUpload
 
-from alexandria import __version__
 from alexandria.auth import Principal, ScopeLevel, TokenStore
+from alexandria.build import build
 from alexandria.context import AppContext
 from alexandria.extract import detect_format
 from alexandria.library import IngestResult, InvalidInput, NotFound, Update
@@ -153,7 +153,7 @@ def render(request: Request, name: str, *, code: int = 200, **data: Any) -> HTML
         "request": request,
         "user": who,
         "csrf": _csrf_for(request, cookie) if cookie else "",
-        "version": __version__,
+        "build": build(),
         "inbox_count": c.library.index.counts().get("inbox", 0) if who else 0,
         "active_jobs": _active_jobs(c.library.index.job_counts()) if who else 0,
         "path": request.url.path,

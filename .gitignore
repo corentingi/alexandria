@@ -10,3 +10,6 @@ dist/
 .python-version
 # Personal agent instructions (Claude Code reads this; it imports AGENTS.md)
 CLAUDE.local.md
+
+# Written by the Docker build (src/alexandria/build.py)
+src/alexandria/_build.txt

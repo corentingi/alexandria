@@ -14,8 +14,8 @@ from typing import Annotated
 
 import typer
 
-from alexandria import __version__
 from alexandria.auth import ScopeLevel, TokenStore
+from alexandria.build import build
 from alexandria.config import Settings, load_settings
 from alexandria.library import InvalidInput, Library, NotFound
 from alexandria.storage.index import SearchFilters
@@ -48,7 +48,7 @@ def _logging(level: str = "INFO") -> None:
 @app.command()
 def version() -> None:
     """Print the version."""
-    typer.echo(__version__)
+    typer.echo(build().version)
 
 
 @app.command()
