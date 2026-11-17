@@ -137,6 +137,20 @@
     if (event.key === "Escape" && target && target.id === "q") target.blur();
   });
 
+  // Transcript timestamps link to the moment on the video's site. When the video or
+  // audio is kept here, they seek the player on the page instead.
+  document.addEventListener("click", function (event) {
+    var link = event.target.closest && event.target.closest(".prose a[href]");
+    var player = document.querySelector("[data-player]");
+    if (!link || !player || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    var match = /[?&#]t=(\d+)s?$/.exec(link.getAttribute("href"));
+    if (!match) return;
+    event.preventDefault();
+    player.currentTime = Number(match[1]);
+    player.play();
+    player.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  });
+
   // Copy buttons: <button data-copy="#element-id">
   document.addEventListener("click", function (event) {
     var button = event.target.closest("[data-copy]");

@@ -23,6 +23,7 @@
   --repo: #6b3fa0;
   --note: #2f7d4f;
   --document: #a5531f;
+  --media: #a12d5d;
   --radius: 10px;
   --radius-sm: 6px;
   --shadow: 0 1px 2px rgba(40, 30, 10, .06), 0 2px 8px rgba(40, 30, 10, .05);
@@ -56,6 +57,7 @@
     --repo: #c39cf0;
     --note: #6fcf97;
     --document: #f0a46c;
+    --media: #f08ab4;
     --shadow: 0 1px 2px rgba(0, 0, 0, .3);
     color-scheme: dark;
   }
@@ -186,6 +188,7 @@ section.card + section.card { margin-top: 16px; }
 .kind.git_repo { color: var(--repo); background: color-mix(in srgb, var(--repo) 14%, transparent); }
 .kind.note { color: var(--note); background: var(--ok-soft); }
 .kind.document { color: var(--document); background: color-mix(in srgb, var(--document) 14%, transparent); }
+.kind.media { color: var(--media); background: color-mix(in srgb, var(--media) 14%, transparent); }
 .tag {
   display: inline-block; padding: 1px 9px; border-radius: 999px; border: 1px solid var(--line-2);
   color: var(--ink-2); font-size: .78rem; font-weight: 500;
@@ -382,12 +385,14 @@ form.sending .dropzone { opacity: .6; pointer-events: none; }
 .chart rect.git_repo { fill: var(--repo); }
 .chart rect.note { fill: var(--note); }
 .chart rect.document { fill: var(--document); }
+.chart rect.media { fill: var(--media); }
 .chart rect.track { fill: var(--surface-2); }
 .chart rect:hover { opacity: .8; }
 .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: .8rem; color: var(--ink-2); margin-top: 10px; }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
 .legend i.article { background: var(--article); } .legend i.git_repo { background: var(--repo); }
 .legend i.note { background: var(--note); } .legend i.document { background: var(--document); }
+.legend i.media { background: var(--media); }
 .counters { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
 @media (max-width: 640px) { .counters { grid-template-columns: repeat(2, 1fr); } }
 .counters a { padding: 14px 16px; color: var(--ink); }
@@ -422,3 +427,18 @@ dialog.modal label.field { margin-bottom: 16px; }
 @media (max-width: 640px) { .token-form { grid-template-columns: minmax(0, 1fr); } }
 .token-secret pre { user-select: all; overflow-wrap: anywhere; white-space: pre-wrap; }
 .table-wrap + .section-title, form + .section-title { margin-top: 20px; }
+
+/* Video and audio (ADR-0021) */
+.media-card { overflow: hidden; padding: 0; }
+.media-card video { display: block; width: 100%; max-height: 70vh; background: var(--ink); }
+.media-card audio { display: block; width: calc(100% - 32px); margin: 12px 16px 0; }
+.media-thumb { display: block; width: 100%; max-height: 360px; object-fit: cover; }
+.media-card .pad { padding: 12px 16px 14px; }
+.media-facts { flex-wrap: wrap; gap: 4px 12px; }
+.media-edit { margin-top: 8px; }
+.media-edit summary { cursor: pointer; color: var(--ink-2); font-size: .9rem; }
+.media-options { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 12px; margin: 10px 0; display: grid; gap: 6px; }
+.media-options legend { padding: 0 4px; font-weight: 600; font-size: .9rem; }
+.choice { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.choice select { width: auto; }
+

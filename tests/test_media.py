@@ -83,7 +83,7 @@ hello world this
 hello world this
 is<00:00:02.500><c> a</c><00:00:03.000><c> test &amp; more</c>
 
-00:01:10.000 --> 00:01:12.000
+00:02:10.000 --> 00:02:12.000
 # a new minute
 """
 
@@ -91,19 +91,29 @@ is<00:00:02.500><c> a</c><00:00:03.000><c> test &amp; more</c>
 class TestTranscript:
     def test_rolling_captions_read_once(self) -> None:
         cues = parse_vtt(ROLLING)
-        assert cues[0].start == 0 and cues[-1].start == 70
+        assert cues[0].start == 0 and cues[-1].start == 130
         text = transcript_markdown(cues, "https://www.youtube.com/watch?v=jNQXAC9IVRw")
         assert text.count("hello world this") == 1
         assert "is a test & more" in text
         first, second = text.split("\n\n")
         assert first.startswith("[0:00](https://www.youtube.com/watch?v=jNQXAC9IVRw&t=0s)")
-        assert second.startswith("[1:10](") and "# a new minute" in second
+        assert second.startswith("[2:10](") and "# a new minute" in second
+
+    def test_paragraphs_end_at_a_sentence_after_a_minute(self) -> None:
+        vtt = "WEBVTT\n\n" + "\n\n".join(
+            f"00:{m:02d}:{sec:02d}.000 --> 00:{m:02d}:{sec:02d}.900\n{text}"
+            for m, sec, text in [(0, 0, "One."), (0, 59, "It is"), (1, 2, "dauntingly hard."),
+                                 (1, 5, "Next"), (3, 30, "no stop")]
+        )  # fmt: skip
+        paragraphs = transcript_markdown(parse_vtt(vtt), None).split("\n\n")
+        assert paragraphs == ["**0:00** One. It is dauntingly hard.", "**1:05** Next",
+                              "**3:30** no stop"]  # fmt: skip
 
     def test_chapters_become_headings(self) -> None:
         chapters = [{"start_time": 0, "title": "Start"}, {"start_time": 60, "title": "# Later"}]
         text = transcript_markdown(parse_vtt(ROLLING), None, chapters)
         assert text.startswith("### Start\n\n**0:00** hello world this")
-        assert "### \\# Later\n\n**1:10**" in text
+        assert "### \\# Later\n\n**2:10**" in text
 
     def test_description_cannot_make_headings(self) -> None:
         text = plain_text_markdown("# Big\n> quote\nline\n\n1. item")

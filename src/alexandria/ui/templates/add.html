@@ -56,8 +56,9 @@
     <input type="url" name="url" value="{{ url }}" required placeholder="https://…" {% if not url %}autofocus{% endif %}
            hx-get="/add/check" hx-trigger="input changed delay:250ms" hx-target="#site-warning" hx-swap="innerHTML">
     <div id="site-warning">{% include "_site_warning.html" %}</div>
-    <small>Web pages become articles. GitHub repositories and URLs ending in <code>.git</code> are cloned with their history.</small>
+    <small>Web pages become articles. GitHub repositories and URLs ending in <code>.git</code> are cloned with their history. YouTube, Vimeo and other videos keep their transcript.</small>
   </label>
+  <div id="media-options">{% include "_media_kind.html" %}</div>
   {% if title %}<input type="hidden" name="title" value="{{ title }}"><p class="muted small">Page title: {{ title }}</p>{% endif %}
   <label class="field"><span>Why?</span>
     <textarea name="why" rows="3" placeholder="Why is this worth keeping? Without a reason it waits in the inbox." {% if url %}autofocus{% endif %}>{{ why or "" }}</textarea>

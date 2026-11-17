@@ -1,0 +1,3 @@
+{%- if media %}{% include "_media_options.html" %}
+{%- elif url_typed and not saved %}<label class="choice small"><input type="checkbox" name="kind" value="media"> Save as a video or audio page <span class="muted">(another site that yt-dlp supports; the transcript is kept)</span></label>
+{%- endif %}

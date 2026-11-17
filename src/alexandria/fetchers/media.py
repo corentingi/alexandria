@@ -373,15 +373,9 @@ def _pick_captions(info: dict[str, Any]) -> tuple[str | None, bool]:
 
 
 def _content_markdown(info: dict[str, Any], url: str, cues: list[Any]) -> str:
-    title = " ".join(str(info.get("title") or "Untitled").split())
-    lines = [f"# {title}", ""]
-    facts = [
-        str(info.get("channel") or info.get("uploader") or ""),
-        timestamp(info["duration"]) if info.get("duration") else "",
-        _date(info.get("upload_date")) or "",
-    ]
-    if any(facts):
-        lines += [" · ".join(f for f in facts if f), ""]
+    """Description and transcript. The title, channel and date are the resource's own
+    fields: repeated here, they would head every section in search."""
+    lines: list[str] = []
     description = str(info.get("description") or "").strip()
     if description:
         lines += ["## Description", "", plain_text_markdown(description), ""]
@@ -394,7 +388,7 @@ def _content_markdown(info: dict[str, Any], url: str, cues: list[Any]) -> str:
             for c in info["chapters"]
         ]
         lines.append("")
-    return "\n".join(lines)
+    return "\n".join(lines) or "_No description and no captions._\n"
 
 
 def _date(value: Any) -> str | None:

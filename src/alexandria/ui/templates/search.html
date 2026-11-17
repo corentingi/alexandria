@@ -12,6 +12,7 @@
   <a class="card stat" href="/?kind=article"><b>{{ stats.kinds.get("article", 0) }}</b><span>articles</span></a>
   <a class="card stat" href="/?kind=git_repo"><b>{{ stats.kinds.get("git_repo", 0) }}</b><span>repositories</span></a>
   <a class="card stat" href="/?kind=document"><b>{{ stats.kinds.get("document", 0) }}</b><span>documents</span></a>
+  <a class="card stat" href="/?kind=media"><b>{{ stats.kinds.get("media", 0) }}</b><span>videos</span></a>
   <a class="card stat" href="/?kind=note"><b>{{ stats.kinds.get("note", 0) }}</b><span>notes</span></a>
   <a class="card stat" href="/activity"><b>{{ stats.week }}</b><span>added this week</span></a>
   <div class="card stat"><b>{{ stats.bytes | filesize }}</b><span>stored</span></div>
@@ -30,7 +31,7 @@
   <div class="filters">
     <select name="kind" aria-label="Kind">
       <option value="">All kinds</option>
-      {% for k, label in [("article", "Articles"), ("git_repo", "Repositories"), ("document", "Documents"), ("note", "Notes")] %}
+      {% for k, label in [("article", "Articles"), ("git_repo", "Repositories"), ("document", "Documents"), ("media", "Videos"), ("note", "Notes")] %}
       <option value="{{ k }}" {{ "selected" if kind == k }}>{{ label }}</option>{% endfor %}
     </select>
     <select name="status" aria-label="Status">

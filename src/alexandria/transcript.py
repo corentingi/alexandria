@@ -17,7 +17,11 @@ from urllib.parse import parse_qsl, urlsplit
 
 _TIMING = re.compile(r"^((?:\d+:)?\d{1,2}:\d{2}(?:[.,]\d{1,3})?)\s+-->\s+")
 _TAG = re.compile(r"<[^>]*>")
+# A paragraph ends at the first sentence end after a minute, or at two minutes anyway
+# (automatic captions have no punctuation).
 _PARAGRAPH_S = 60.0
+_PARAGRAPH_MAX_S = 120.0
+_SENTENCE_END = (".", "?", "!", "…", '."', '?"', '!"')
 
 
 @dataclass
@@ -111,7 +115,14 @@ def transcript_markdown(
         heading = None
         while marks and marks[0][0] <= cue.start:
             heading = marks.pop(0)[1]
-        if heading is not None or (paragraph and cue.start - start >= _PARAGRAPH_S):
+        elapsed = cue.start - start
+        if heading is not None or (
+            paragraph
+            and (
+                (elapsed >= _PARAGRAPH_S and paragraph[-1].endswith(_SENTENCE_END))
+                or elapsed >= _PARAGRAPH_MAX_S
+            )
+        ):
             flush()
         if heading is not None:
             blocks.append(f"### {_escape_line(heading)}")

@@ -624,3 +624,36 @@ class TestMedia:
         assert out["isError"] and "transcript" in out["content"][0]["text"]  # this server
         out = tool(client, w, "update_resource", ref=rid, keep="video", max_height=700)
         assert out["isError"] and "max_height" in out["content"][0]["text"]
+
+    def test_ui(self, client: TestClient, tokens: dict[str, str], settings: Settings) -> None:
+        csrf = TestUi().login(client, tokens["write"])
+        check = client.get("/add/check", params={"url": "https://youtu.be/jNQXAC9IVRw"}).text
+        assert 'name="keep" value="transcript"' in check and "transcripts only" in check
+        other = client.get("/add/check", params={"url": "https://videos.example.org/w/1"}).text
+        assert 'name="kind" value="media"' in other
+
+        settings.media.downloads = True
+        form = {"url": self.VIDEO, "csrf": csrf, "why": "zoo", "keep": "audio"}
+        res = client.post("/add", data=form, follow_redirects=False)
+        assert res.status_code == 303
+        rid = res.headers["location"].split("/r/", 1)[1].split("?", 1)[0]
+        data = wait_ready(client, rid, tokens["read"])
+        assert data["media"]["keep"] == "audio"
+
+        page = client.get(f"/r/{rid}")
+        assert "media-src 'self'" in page.headers["content-security-policy"]
+        player = re.search(r'<audio controls preload="metadata" src="([^"]+)"', page.text)
+        assert player and "Description and transcript" in page.text and "0:19" in page.text
+        audio = client.get(player.group(1), headers={"Range": "bytes=0-99"})
+        assert audio.status_code == 206 and len(audio.content) == 100
+        assert audio.headers["content-type"] == "audio/mp4"
+        assert audio.headers["content-disposition"].startswith("inline")
+        info = client.get(f"/r/{rid}/files/snapshots/{data['current_snapshot']}/info.json")
+        assert info.headers["content-disposition"].startswith("attachment")
+
+        res = client.post(f"/r/{rid}/media", data={"csrf": csrf, "keep": "video",
+                                                   "max_height": "480"}, follow_redirects=False)  # fmt: skip
+        assert res.status_code == 303 and "fetching" in unquote_plus(res.headers["location"])
+        data = wait_ready(client, rid, tokens["read"])
+        assert data["media"] == {"keep": "video", "max_height": 480}
+        assert "<video controls" in client.get(f"/r/{rid}").text

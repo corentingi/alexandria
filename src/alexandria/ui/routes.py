@@ -35,8 +35,11 @@ from alexandria.auth import Principal, ScopeLevel, TokenStore
 from alexandria.context import AppContext
 from alexandria.extract import detect_format
 from alexandria.library import IngestResult, InvalidInput, NotFound, Update
-from alexandria.models import Kind, Resource, Status, iso
+from alexandria.models import VIDEO_HEIGHTS, Kind, Resource, Status, iso
+from alexandria.storage.files import guess_mime
 from alexandria.storage.index import HL_END, HL_START, SearchFilters
+from alexandria.transcript import timestamp
+from alexandria.urls import InvalidURL, detect
 from alexandria.views import plain_snippet
 from alexandria.walls import site_warning
 
@@ -156,10 +159,14 @@ def render(request: Request, name: str, *, code: int = 200, **data: Any) -> HTML
         "path": request.url.path,
         # Called only by the pages with tag fields (add, resource).
         "known_tags": lambda: [t for t, _ in c.library.tags()[:300]] if who else [],
+        "media_levels": c.library.media_levels(),
+        "video_heights": VIDEO_HEIGHTS,
+        "media_defaults": c.library.settings.media,
     }
     response = templates.TemplateResponse(request, name, base | data, status_code=code)
     response.headers["Content-Security-Policy"] = (
-        "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; "
+        "default-src 'self'; img-src 'self' data:; media-src 'self'; style-src 'self'; "
+        "script-src 'self'; "
         "frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
     )
     response.headers["X-Content-Type-Options"] = "nosniff"
@@ -254,6 +261,7 @@ def _snapshot_date(snapshot_id: str) -> str:
 templates.env.filters.update(
     host=_host, ago=_ago, filesize=_size, highlight=_highlight, markdown=_markdown,
     date=_date, snapdate=_snapshot_date, urlquote=lambda s: quote(s, safe=""),
+    duration=timestamp,
 )  # fmt: skip
 templates.env.globals.update(Kind=Kind, Status=Status, ScopeLevel=ScopeLevel)
 
@@ -406,19 +414,22 @@ async def add_page(
 
 @router.get("/add/check")
 async def add_check(request: Request, c: Ctx, who: User, url: str = "") -> Response:
-    """Live notes under the URL field: already saved, or a site that blocks fetches."""
-    return render(request, "_site_warning.html", **_url_notes(c, url))
+    """Live notes under the URL field: already saved, or a site that blocks fetches; and
+    the video options, swapped out of band, when the link is a video."""
+    return render(request, "_site_warning.html", oob=True, **_url_notes(c, url))
 
 
 def _url_notes(c: AppContext, url: str) -> dict[str, Any]:
     url = url.strip()
     if not url:
-        return {"warning": None, "saved": None}
+        return {"warning": None, "saved": None, "media": False, "url_typed": False}
     try:
         saved = c.library.lookup_url(url)
-    except InvalidInput:  # not a URL yet: the user is still typing
-        saved = None
-    return {"warning": None if saved else site_warning(url), "saved": saved}
+        media = detect(url).kind == Kind.MEDIA
+    except InvalidInput, InvalidURL:  # not a URL yet: the user is still typing
+        saved, media = None, False
+    warning = None if saved or media else site_warning(url)
+    return {"warning": warning, "saved": saved, "media": media and not saved, "url_typed": True}
 
 
 @router.post("/add", dependencies=[Csrf])
@@ -432,6 +443,8 @@ async def add(
     project: Annotated[str, Form()] = "",
     title: Annotated[str, Form()] = "",
     kind: Annotated[str, Form()] = "",
+    keep: Annotated[str, Form()] = "",
+    max_height: Annotated[str, Form()] = "",
 ) -> Response:
     need(who, ScopeLevel.WRITE)
     try:
@@ -440,13 +453,15 @@ async def add(
             why=why or None,
             tags=_split_tags(tags),
             project=project or None,
-            kind=Kind(kind) if kind else None,
+            kind=Kind(kind) if kind in Kind else None,
             title=title or None,
             created_by=who.name,
+            media=c.library.media_choice(keep, max_height),
         )
     except InvalidInput as exc:
         return render(request, "add.html", code=400, url=url, title=title, why=why, tags=tags,
-                      project=project, tab="url", error=str(exc))  # fmt: skip
+                      project=project, tab="url", error=str(exc),
+                      **_url_notes(c, url))  # fmt: skip
     c.enqueued()
     notice = _saved_notice(result)
     # By id: an article's slug may still change once its title is extracted (ADR-0008).
@@ -687,6 +702,27 @@ async def set_status(
     return back(f"/r/{resource.slug}", notice=f"Marked as {status.value}.")
 
 
+@router.post("/r/{ref}/media", dependencies=[Csrf])
+async def media_options(
+    c: Ctx,
+    who: User,
+    ref: str,
+    keep: Annotated[str, Form()],
+    max_height: Annotated[str, Form()] = "",
+) -> Response:
+    """Change what a video keeps, and fetch it again with the new choice."""
+    need(who, ScopeLevel.WRITE)
+    try:
+        resource = await c.library.update(
+            ref, Update(media=c.library.media_choice(keep, max_height))
+        )
+        await c.library.refetch(resource.id)
+    except InvalidInput as exc:
+        return back(f"/r/{ref}", error=str(exc))
+    c.enqueued()
+    return back(f"/r/{resource.slug}", notice="Saved; fetching it again.")
+
+
 @router.post("/r/{ref}/refetch", dependencies=[Csrf])
 async def refetch(c: Ctx, who: User, ref: str) -> Response:
     need(who, ScopeLevel.WRITE)
@@ -781,12 +817,22 @@ async def download(c: Ctx, who: User, ref: str, path: str) -> Response:
         file_path = c.library.files.file_path(resource.id, path)
     except (FileNotFoundError, PermissionError) as exc:
         raise HTTPException(404, "No such file.") from exc
+    # Media and raster images play or show in the page (video player, thumbnails); any
+    # other file is a download (ADR-0010).
+    mime = guess_mime(file_path.name)
     return FileResponse(
         file_path,
         filename=file_path.name,
-        content_disposition_type="attachment",
+        media_type=mime if mime in INLINE_TYPES else None,
+        content_disposition_type="inline" if mime in INLINE_TYPES else "attachment",
         headers={"X-Content-Type-Options": "nosniff", "Content-Security-Policy": "sandbox"},
     )
+
+
+INLINE_TYPES = {
+    "video/mp4", "video/webm", "audio/mp4", "audio/webm", "audio/mpeg", "audio/ogg",
+    "image/jpeg", "image/png", "image/webp",
+}  # fmt: skip
 
 
 # --------------------------------------------------------------------- activity
@@ -808,7 +854,7 @@ async def activity(request: Request, c: Ctx, who: User, status: str | None = Non
 
 
 CHART_DAYS = 30
-CHART_KINDS = ("article", "git_repo", "document", "note")
+CHART_KINDS = ("article", "git_repo", "document", "media", "note")
 
 
 def _capture_chart(c: AppContext) -> dict[str, Any]:

@@ -154,9 +154,8 @@ class TestInterfaces:
         _InterfaceUi().login(client, tokens["write"])
         live = client.get("/add/check", params={"url": REDDIT})
         assert live.status_code == 200 and "Reddit blocks automated fetches" in live.text
-        assert (
-            client.get("/add/check", params={"url": "https://blog.example.com/"}).text.strip() == ""
-        )
+        plain = client.get("/add/check", params={"url": "https://blog.example.com/"}).text
+        assert "notice" not in plain and 'id="media-options"' in plain
         page = client.get("/add", params={"url": "https://www.linkedin.com/posts/x"}).text
         assert "LinkedIn shows most content only to signed-in users" in page
 

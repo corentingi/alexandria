@@ -1,0 +1,37 @@
+{#- A video or audio resource: the player (when a file was kept), its facts and the choice
+    of what to keep. Files are served from this server only (CSP media-src 'self'). -#}
+{%- set m = r.meta -%}
+{%- set media = r.artifact("media") -%}
+{%- set thumb = r.artifact("thumbnail") -%}
+{%- set base = "/r/" ~ r.slug ~ "/files/snapshots/" ~ r.current_snapshot ~ "/" -%}
+<section class="card media-card">
+  {% if media and (media.model_extra or {}).get("keep") == "audio" %}
+    {% if thumb %}<img class="media-thumb" src="{{ base ~ thumb.path }}" alt="">{% endif %}
+    <audio controls preload="metadata" src="{{ base ~ media.path }}" data-player></audio>
+  {% elif media %}
+    <video controls preload="metadata" src="{{ base ~ media.path }}" {% if thumb %}poster="{{ base ~ thumb.path }}"{% endif %} data-player></video>
+  {% elif thumb %}
+    <img class="media-thumb" src="{{ base ~ thumb.path }}" alt="Thumbnail of the video">
+  {% endif %}
+  <div class="pad">
+    <div class="row small muted media-facts">
+      {% if m.get("channel") %}<span>{% if (m.get("channel_url") or "").startswith(("https://", "http://")) %}<a href="{{ m.channel_url }}" rel="noopener noreferrer nofollow" target="_blank">{{ m.channel }}</a>{% else %}{{ m.channel }}{% endif %}</span>{% endif %}
+      {% if m.get("duration_s") %}<span>{{ m.duration_s | duration }}</span>{% endif %}
+      {% if m.get("published_at") %}<span>published {{ m.published_at }}</span>{% endif %}
+      {% if m.get("captions") %}<span>{{ {"manual": "captions by a person", "automatic": "automatic captions", "none": "no captions"}.get(m.captions, m.captions) }}</span>{% endif %}
+      {% if media %}<span>{{ media.size | filesize }}{% if m.get("media_height") %} · {{ m.media_height }}p{% endif %}</span>{% endif %}
+    </div>
+    {% if m.get("captions") == "none" %}<p class="small muted">This video has no captions, so there is no transcript: only its description is searched.</p>{% endif %}
+    {% if m.get("media_skipped") %}<div class="notice warn small">The {{ (r.media.keep.value if r.media else "media") }} file was not saved: {{ m.media_skipped }}.</div>{% endif %}
+    {% if user.can(ScopeLevel.WRITE) %}
+    <details class="media-edit">
+      <summary>Keeps {{ {"transcript": "the transcript", "audio": "the audio", "video": "the video"}[(r.media.keep.value if r.media else media_defaults.keep.value)] }}{% if r.media and r.media.keep.value == "video" %} (up to {{ r.media.max_height or media_defaults.max_height }}p){% endif %}: change</summary>
+      <form method="post" action="/r/{{ r.slug }}/media">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        {% set choice = r.media %}{% include "_media_options.html" %}
+        <div class="row end"><button class="btn sm primary" type="submit">{{ icon("refresh", 14) }} Save and fetch again</button></div>
+      </form>
+    </details>
+    {% endif %}
+  </div>
+</section>

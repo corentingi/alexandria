@@ -50,8 +50,10 @@
       {% else %}<p class="muted">No reason given yet.</p>{% endif %}
     </section>
 
+    {% if r.kind.value == "media" %}{% include "_media_card.html" %}{% endif %}
+
     <section class="card pad">
-      <div class="row card-head"><h2 class="grow">{% if r.kind.value == "note" %}Note{% elif content_role == "attachment" %}Text from the attachment{% elif content_role == "readme" %}README{% elif r.kind.value == "document" %}Extracted text{% else %}Content{% endif %}</h2>
+      <div class="row card-head"><h2 class="grow">{% if r.kind.value == "note" %}Note{% elif content_role == "attachment" %}Text from the attachment{% elif content_role == "readme" %}README{% elif r.kind.value == "document" %}Extracted text{% elif r.kind.value == "media" %}Description and transcript{% else %}Content{% endif %}</h2>
         {% if r.snapshots|length > 1 and shown %}<span class="small muted">snapshot {{ shown.id | snapdate }}{% if shown.id != r.current_snapshot %} · <a href="/r/{{ r.slug }}">see current</a>{% endif %}</span>{% endif %}
         {% if r.kind.value == "note" and user.can(ScopeLevel.WRITE) and editing != "note" %}<a class="btn sm" href="/r/{{ r.slug }}?edit=note#note">{{ icon("note", 13) }} Edit</a>{% endif %}
       </div>
