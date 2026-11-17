@@ -84,10 +84,10 @@ async def pinned_address(
     if not host:
         raise BlockedURL("URL has no host")
     port = parts.port or (443 if parts.scheme == "https" else 80)
-    return await _host_address(host, port, allow_private_hosts)
+    return await host_address(host, port, allow_private_hosts)
 
 
-async def _host_address(host: str, port: int, allow_private_hosts: Iterable[str]) -> str | None:
+async def host_address(host: str, port: int, allow_private_hosts: Iterable[str]) -> str | None:
     host = host.lower().rstrip(".")
     if host in {h.lower() for h in allow_private_hosts}:
         return None
@@ -133,7 +133,7 @@ class GuardedBackend(AsyncNetworkBackend):
         local_address: str | None = None,
         socket_options: Iterable[SOCKET_OPTION] | None = None,
     ) -> AsyncNetworkStream:
-        address = await _host_address(host, port, self.allow) or host
+        address = await host_address(host, port, self.allow) or host
         return await self.inner.connect_tcp(
             address, port, timeout=timeout, local_address=local_address,
             socket_options=socket_options,
