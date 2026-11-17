@@ -171,7 +171,7 @@ class Library:
         choice = choice or MediaChoice(keep=self.settings.media.keep)
         if choice.keep.value not in self.media_levels():
             raise InvalidInput(
-                f"this server keeps {', '.join(self.media_levels())} only for videos"
+                "this server keeps only the transcripts of videos (it has no ffmpeg)"
             )
         return choice
 
@@ -370,6 +370,10 @@ class Library:
         if detected.forge == "github":
             base_title = f"{detected.owner}/{detected.repo}"
             slug_base = f"{detected.owner}-{detected.repo}"
+        elif detected.kind == Kind.MEDIA and not (title or "").strip():
+            # "watch (www.youtube.com)" says nothing; the real title comes with the fetch.
+            host = (urlsplit(detected.canonical_url).hostname or "").removeprefix("www.")
+            base_title = slug_base = f"Video on {host}"
         else:
             base_title = (title or "").strip() or _title_from_url(detected.canonical_url)
             slug_base = base_title

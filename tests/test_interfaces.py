@@ -651,8 +651,8 @@ class TestMedia:
         info = client.get(f"/r/{rid}/files/snapshots/{data['current_snapshot']}/info.json")
         assert info.headers["content-disposition"].startswith("attachment")
 
-        res = client.post(f"/r/{rid}/media", data={"csrf": csrf, "keep": "video",
-                                                   "max_height": "480"}, follow_redirects=False)  # fmt: skip
+        change = {"csrf": csrf, "keep": "video", "max_height": "480"}
+        res = client.post(f"/r/{rid}/media", data=change, follow_redirects=False)
         assert res.status_code == 303 and "fetching" in unquote_plus(res.headers["location"])
         data = wait_ready(client, rid, tokens["read"])
         assert data["media"] == {"keep": "video", "max_height": 480}

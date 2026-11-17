@@ -165,6 +165,7 @@ class TestMediaFetch:
         result = await media_library.ingest(VIDEO, why="the first video")
         assert result.resource.kind == Kind.MEDIA
         assert result.resource.media == MediaChoice(keep=MediaLevel.TRANSCRIPT)
+        assert result.resource.title == "Video on youtube.com"  # until the fetch
         await Worker(media_library).drain()
         r = media_library.get(result.resource.id)
         assert r.fetch_status == FetchStatus.READY, r.fetch_error
@@ -191,7 +192,7 @@ class TestMediaFetch:
 
     async def test_audio_needs_downloads(self, media_library: Library) -> None:
         assert media_library.media_levels() == ["transcript"]
-        with pytest.raises(InvalidInput, match="transcript only"):
+        with pytest.raises(InvalidInput, match="transcripts of videos"):
             await media_library.ingest(VIDEO, media=MediaChoice(keep=MediaLevel.AUDIO))
 
     async def test_audio_then_refetch_reuses_the_file(
