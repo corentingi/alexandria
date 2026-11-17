@@ -27,11 +27,13 @@ from alexandria.fetchers.attachment import download_attachment
 from alexandria.fetchers.base import Fetcher, FetchError, PermanentFetchError, SnapshotResult
 from alexandria.fetchers.document import DocumentFetcher, extract_to
 from alexandria.fetchers.git_repo import GitRepoFetcher
+from alexandria.fetchers.media import MediaFetcher, allowed_levels
 from alexandria.ids import is_id, new_id, unique_slug
 from alexandria.models import (
     Attachment,
     FetchStatus,
     Kind,
+    MediaChoice,
     Resource,
     Scope,
     Snapshot,
@@ -68,7 +70,7 @@ log = logging.getLogger(__name__)
 # Meta keys that describe one snapshot; cleared before a new snapshot's meta is merged.
 _SNAPSHOT_META_KEYS = {
     "extraction", "archive_skipped", "possible_duplicate_of", "final_url", "lfs",
-    "content_type",
+    "content_type", "captions", "media_kept", "media_height", "media_skipped",
 }  # fmt: skip
 
 MAX_CONTENT_CHARS = 50_000
@@ -105,6 +107,7 @@ class Update:
     title: str | None = None
     project: str | None = None
     scope: Scope | None = None
+    media: MediaChoice | None = None  # takes effect on the next fetch
 
 
 @dataclass
@@ -141,11 +144,24 @@ class Library:
             Kind.ARTICLE: ArticleFetcher(settings),
             Kind.GIT_REPO: GitRepoFetcher(settings),
             Kind.DOCUMENT: DocumentFetcher(settings),
+            Kind.MEDIA: MediaFetcher(settings),
         }
         self.fetchers = defaults | (fetchers or {})
         self._locks: dict[str, asyncio.Lock] = {}
         self._ingest_lock = asyncio.Lock()
         self.max_attempts = settings.worker.max_attempts
+
+    def media_levels(self) -> list[str]:
+        """What a media resource can keep on this server (transcript only without ffmpeg)."""
+        return [level.value for level in allowed_levels(self.settings)]
+
+    def _media_choice(self, choice: MediaChoice | None) -> MediaChoice:
+        choice = choice or MediaChoice(keep=self.settings.media.keep)
+        if choice.keep.value not in self.media_levels():
+            raise InvalidInput(
+                f"this server keeps {', '.join(self.media_levels())} only for videos"
+            )
+        return choice
 
     def close(self) -> None:
         self.index.close()
@@ -290,17 +306,22 @@ class Library:
         kind: Kind | None = None,
         title: str | None = None,
         created_by: str | None = None,
+        media: MediaChoice | None = None,
     ) -> IngestResult:
+        """``media``: what to keep of a video (ignored for other kinds); the server's
+        default when not given."""
         try:
             detected = detect(url, kind)
         except InvalidURL as exc:
             raise InvalidInput(str(exc)) from exc
+        if detected.kind == Kind.MEDIA:
+            media = self._media_choice(media)
         await self._guard(detected.canonical_url)
         async with self._ingest_lock:
             existing = self.index.find_by_canonical_url(detected.canonical_url)
             if existing is None:
                 return self._create_from_url(detected, url, why, tags, scope, project, title,
-                                             created_by)  # fmt: skip
+                                             created_by, media)  # fmt: skip
         return await self._add_to_existing(existing, why, tags)
 
     async def _add_to_existing(
@@ -329,6 +350,7 @@ class Library:
         project: str | None,
         title: str | None,
         created_by: str | None,
+        media: MediaChoice | None = None,
     ) -> IngestResult:
         """Caller holds ``_ingest_lock``. Synchronous: no other task runs in between."""
         now = utcnow()
@@ -357,6 +379,7 @@ class Library:
             updated_at=now,
             created_by=created_by,
             meta={"forge": detected.forge} if detected.forge else {},
+            media=media if detected.kind == Kind.MEDIA else None,
         )
         resource.status = Status.KEPT if resource.why else Status.INBOX
         self.files.write(resource)
@@ -585,6 +608,10 @@ class Library:
                 if changes.project == "":
                     project, scope = None, changes.scope or Scope.GLOBAL
                 resource.scope, resource.project = _scope(scope, project)
+            if changes.media is not None:
+                if resource.kind != Kind.MEDIA:
+                    raise InvalidInput("only a video or audio resource has media options")
+                resource.media = self._media_choice(changes.media)
             if changes.status is not None:
                 if changes.status == Status.KEPT and not resource.why:
                     raise InvalidInput("a resource needs a 'why' before it can be kept")
@@ -883,7 +910,7 @@ class Library:
         ):
             resource.title = result.title.strip()[:300]
             resource.title_source = TitleSource.EXTRACTED
-            if first_snapshot and resource.kind == Kind.ARTICLE:
+            if first_snapshot and resource.kind in (Kind.ARTICLE, Kind.MEDIA):
                 # The slug was derived from the URL; now we know the real title.
                 resource.slug = unique_slug(
                     resource.title, lambda s: self.index.slug_taken(s, resource_id)

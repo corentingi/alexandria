@@ -26,3 +26,5 @@ mark the old one superseded.
 | [0018](0018-manage-tokens-in-the-ui.md) | Tokens are managed in the UI too (amends 0010) | Accepted |
 | [0019](0019-ssrf-guard-pins-the-connection.md) | The SSRF guard pins the connection to the checked address (amends 0007) | Accepted |
 | [0020](0020-parsers-run-in-a-child-process.md) | Untrusted files are parsed in a child process (amends 0012) | Accepted |
+| [0021](0021-video-and-audio-with-yt-dlp.md) | Video and audio pages are fetched with yt-dlp | Accepted |
+| [0022](0022-guarded-proxy-for-child-processes.md) | Child processes reach the network through a guarded proxy (extends 0019) | Accepted |

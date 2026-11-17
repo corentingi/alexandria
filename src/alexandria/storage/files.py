@@ -184,7 +184,14 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+# Types browsers play, where the system tables say otherwise (.m4a: audio/mp4a-latm).
+_MIME_OVERRIDES = {".m4a": "audio/mp4", ".opus": "audio/ogg", ".vtt": "text/vtt"}
+
+
 def guess_mime(name: str) -> str:
+    suffix = name[name.rfind(".") :].lower() if "." in name else ""
+    if suffix in _MIME_OVERRIDES:
+        return _MIME_OVERRIDES[suffix]
     if name.endswith(".md"):
         return "text/markdown"
     if name.endswith(".tar.gz"):

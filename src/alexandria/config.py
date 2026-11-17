@@ -21,6 +21,7 @@ from pydantic_settings import (
 )
 
 from alexandria import __version__
+from alexandria.models import MediaLevel
 
 
 class HttpSettings(BaseModel):
@@ -68,6 +69,20 @@ class ExtractSettings(BaseModel):
     isolate: bool = True  # False runs the parser in a thread: tests and debugging only
 
 
+class MediaSettings(BaseModel):
+    """Video and audio pages fetched with yt-dlp (ADR-0021)."""
+
+    # Default for new media resources; each resource can choose its own.
+    keep: MediaLevel = MediaLevel.TRANSCRIPT
+    max_height: int = 720  # default video height cap
+    # Audio and video files: None saves them when ffmpeg is installed (the full image);
+    # False keeps transcripts only (the slim image has no ffmpeg).
+    downloads: bool | None = None
+    max_mb: int = 4000  # per media file
+    max_duration_min: int = 360  # longer videos keep their transcript only
+    timeout_s: float = 3600  # a whole yt-dlp run, download included
+
+
 class AttachmentSettings(BaseModel):
     max_mb: int = 500
 
@@ -107,6 +122,7 @@ class Settings(BaseSettings):
     git: GitSettings = Field(default_factory=GitSettings)
     github: GithubSettings = Field(default_factory=GithubSettings)
     attachments: AttachmentSettings = Field(default_factory=AttachmentSettings)
+    media: MediaSettings = Field(default_factory=MediaSettings)
     extract: ExtractSettings = Field(default_factory=ExtractSettings)
     worker: WorkerSettings = Field(default_factory=WorkerSettings)
     export: ExportSettings = Field(default_factory=ExportSettings)

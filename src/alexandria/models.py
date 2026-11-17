@@ -17,6 +17,7 @@ class Kind(StrEnum):
     GIT_REPO = "git_repo"
     NOTE = "note"
     DOCUMENT = "document"  # an uploaded file (PDF, DOCX, EPUB, text…), kept in source/
+    MEDIA = "media"  # a video or audio page, fetched with yt-dlp (ADR-0021)
 
 
 class Status(StrEnum):
@@ -51,6 +52,33 @@ def utcnow() -> datetime:
 
 def iso(dt: datetime) -> str:
     return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+class MediaLevel(StrEnum):
+    """What a media fetch keeps besides details, captions and thumbnail (ADR-0021)."""
+
+    TRANSCRIPT = "transcript"  # captions only: no audio or video file
+    AUDIO = "audio"
+    VIDEO = "video"  # picture and sound in one file
+
+
+VIDEO_HEIGHTS = (360, 480, 720, 1080, 1440, 2160)
+
+
+class MediaChoice(BaseModel):
+    """A human's choice for a media resource; a fetcher only reads it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    keep: MediaLevel = MediaLevel.TRANSCRIPT
+    max_height: int | None = None  # video only; None: the server default
+
+    @field_validator("max_height")
+    @classmethod
+    def _known_height(cls, value: int | None) -> int | None:
+        if value is not None and value not in VIDEO_HEIGHTS:
+            raise ValueError(f"max_height must be one of {', '.join(map(str, VIDEO_HEIGHTS))}")
+        return value
 
 
 class Artifact(BaseModel):
@@ -111,6 +139,8 @@ class Resource(BaseModel):
     attachments: list[Attachment] = Field(default_factory=list)
     # For documents: the uploaded original, stored in source/ (ADR-0012).
     source_file: Attachment | None = None
+    # For media: what to keep (transcript, audio or video), chosen by a human.
+    media: MediaChoice | None = None
     generated: dict[str, Any] = Field(default_factory=dict)
     # The Markdown body of resource.md: human notes (for a note, the note itself).
     notes: str = Field(default="", exclude=True)
@@ -194,10 +224,27 @@ class GitRepoMeta(BaseModel):
     lfs: bool | None = None
 
 
+class MediaMeta(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    site: str | None = None
+    video_id: str | None = None
+    channel: str | None = None
+    channel_url: str | None = None
+    duration_s: int | None = None
+    published_at: str | None = None
+    language: str | None = None
+    captions: str | None = None  # manual | automatic | none
+    media_kept: str | None = None  # audio | video, when a file was saved
+    media_height: int | None = None
+    media_skipped: str | None = None  # why the file asked for was not saved
+
+
 _META_SCHEMAS: dict[Kind, type[BaseModel]] = {
     Kind.ARTICLE: ArticleMeta,
     Kind.GIT_REPO: GitRepoMeta,
     Kind.DOCUMENT: DocumentMeta,
+    Kind.MEDIA: MediaMeta,
 }
 
 
