@@ -204,15 +204,17 @@ class MediaFetcher:
             plan.skipped = f"longer than {self.settings.media.max_duration_min} minutes"
 
     def _format_args(self, plan: _Plan) -> list[str]:
-        """Formats browsers play (H.264 and AAC first); separate video and audio streams
-        are merged with ffmpeg into an MP4, from local files only."""
+        """The highest resolution under the cap, then formats browsers play (H.264 and AAC
+        first); separate video and audio streams are merged with ffmpeg into an MP4, from
+        local files only. ``res`` must come first: otherwise a 360p file that has its own
+        AAC sound outranks a 1080p video-only stream on ``acodec``."""
         if plan.keep == MediaLevel.AUDIO:  # kept as served: no conversion, no ffmpeg
             return ["-f", "bestaudio[ext=m4a]/bestaudio"]
         h = plan.height
         if self.tools.ffmpeg:
             return [
                 "-f", f"bv*[height<={h}]+ba/b[height<={h}]/wv*+ba/w",
-                "-S", "vcodec:h264,acodec:m4a,ext:mp4:m4a",
+                "-S", "res,vcodec:h264,acodec:m4a,ext:mp4:m4a",
                 "--merge-output-format", "mp4", "--ffmpeg-location", self.tools.ffmpeg,
             ]  # fmt: skip
         return ["-f", f"b[height<={h}]/w"]  # one file with sound: nothing to merge

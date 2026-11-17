@@ -8,7 +8,7 @@ import pytest
 
 from alexandria.config import Settings
 from alexandria.fetchers.base import PermanentFetchError
-from alexandria.fetchers.media import _error, _pick_captions
+from alexandria.fetchers.media import MediaFetcher, MediaTools, _error, _pick_captions, _Plan
 from alexandria.jobs import Worker
 from alexandria.library import InvalidInput, Library, Update
 from alexandria.models import FetchStatus, Kind, MediaChoice, MediaLevel
@@ -272,3 +272,54 @@ class TestMediaFetch:
             await media_library._job_fetch(job)
         r = media_library.get(result.resource.id)
         assert r.fetch_status == status and message in (r.fetch_error or "")
+
+
+class TestFormatChoice:
+    """yt-dlp's own selector, offline, on formats YouTube offered for a real video."""
+
+    FORMATS = [
+        # id, height, vcodec, acodec, tbr
+        ("18", 358, "avc1.42001E", "mp4a.40.2", 493),  # 360p with its sound
+        ("134", 358, "avc1.4D401E", "none", 364),
+        ("243", 358, "vp9", "none", 283),
+        ("136", 714, "avc1.64001F", "none", 1470),
+        ("247", 714, "vp9", "none", 1100),
+        ("137", 1072, "avc1.640028", "none", 2852),
+        ("248", 1072, "vp9", "none", 2200),
+        ("140", None, "none", "mp4a.40.2", 129),
+        ("251", None, "none", "opus", 121),
+        ("380", None, "none", "ac-3", 384),
+    ]
+
+    def chosen(self, settings: Settings, height: int, ffmpeg: bool = True) -> str:
+        from yt_dlp import YoutubeDL
+
+        tools = MediaTools("/usr/bin/ffmpeg" if ffmpeg else None, None)
+        args = MediaFetcher(settings, tools)._format_args(_Plan(MediaLevel.VIDEO, height))
+        params = {"format": args[args.index("-f") + 1], "quiet": True, "simulate": True}
+        if "-S" in args:
+            params["format_sort"] = args[args.index("-S") + 1].split(",")
+        formats = [
+            {"format_id": i, "url": f"https://example.invalid/{i}", "height": h,
+             "width": h and h * 16 // 9, "vcodec": v, "acodec": a, "tbr": t,
+             "ext": "webm" if v == "vp9" or a == "opus" else "mp4" if h else "m4a"}
+            for i, h, v, a, t in self.FORMATS
+        ]  # fmt: skip
+        info = {"id": "x", "title": "x", "extractor": "youtube", "extractor_key": "Youtube",
+                "webpage_url": "https://www.youtube.com/watch?v=x", "formats": formats}  # fmt: skip
+        with YoutubeDL(params) as ydl:  # type: ignore[arg-type]
+            ydl.params["ffmpeg_location"] = "/usr/bin/ffmpeg"
+            ydl._has_ffmpeg = True  # type: ignore[attr-defined]
+            result = ydl.process_ie_result(info, download=False)
+        return str(result["format_id"])
+
+    @pytest.mark.parametrize(("height", "expected"), [(1080, "137+140"), (720, "136+140"),
+                                                       (480, "18"), (360, "18")])  # fmt: skip
+    def test_highest_resolution_under_the_cap(
+        self, settings: Settings, height: int, expected: str
+    ) -> None:
+        # Height first; then H.264 and AAC, so at 360p the file that has its sound wins.
+        assert self.chosen(settings, height) == expected
+
+    def test_without_ffmpeg_one_file_with_sound(self, settings: Settings) -> None:
+        assert self.chosen(settings, 1080, ffmpeg=False) == "18"
