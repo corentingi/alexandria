@@ -419,10 +419,11 @@ GET    /healthz                      (no auth)
 ### 10.4 CLI (Typer)
 Every common action, so a shell in the container can do what the UI does. Commands open
 the data directory through `Library`; the server's worker runs the jobs they queue. Read
-commands take `--json` (the REST API's shape). Refs are ids or slugs.
+commands take `--json` (the REST API's shape). Refs are ids or slugs. Resource locks are
+`flock`s, so the CLI and the server take turns (ADR-0023).
 ```
 alexandria serve | version | stats
-alexandria add <url> [--why] [--tag]… [--project] [--keep] [--max-height] [--video] [--now]
+alexandria add <url> [--why] [--tag]… [--project] [--title] [--keep] [--max-height] [--video] [--now]
 alexandria upload <files>… | import <file> | note <title> [--body-file f|-]
 alexandria list [--kind] [--status] [--tag] [--project] [--fetch-status] [--limit]
 alexandria search <query> [filters] | lookup <url> | tags | projects
@@ -436,7 +437,7 @@ alexandria snapshot list <ref> | delete <ref> <id>
 alexandria jobs list [--status] | show <id> | retry <id> | retry --failed
 alexandria reindex [ref] | backup <dest-dir>
 alexandria token create <name> --scope read|write|admin | list | scope <name> <s> | revoke <name>
-alexandria library export [--out] | exports | delete-export <id> | import <parts>…
+alexandria library export [--out] | exports | delete-export <id> [--yes] | import <parts>…
 ```
 
 ## 11. Auth (v1)

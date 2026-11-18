@@ -32,7 +32,7 @@ from alexandria.cli._common import (
     warn,
 )
 from alexandria.library import InvalidInput, Library, Update
-from alexandria.models import FetchStatus, Kind, Resource, Scope, Status, iso
+from alexandria.models import FetchStatus, Kind, MediaChoice, Resource, Scope, Status, iso
 from alexandria.storage.index import SearchFilters
 from alexandria.views import highlight, resource_detail, resource_summary, search_result
 
@@ -63,6 +63,17 @@ def _filters(
     )
 
 
+def _media(library: Library, keep: str | None, max_height: int | None) -> MediaChoice | None:
+    if max_height and keep != "video":
+        fail("--max-height needs --keep video")
+    return library.media_choice(keep, max_height)
+
+
+def _clean(values: list[str] | None) -> list[str]:
+    """Repeated options without the empty ones ("--tag ''" from an unset variable)."""
+    return [v for v in values or [] if v.strip()]
+
+
 async def _file_chunks(path: Path) -> AsyncIterator[bytes]:
     with path.open("rb") as fh:
         while block := fh.read(1 << 20):
@@ -91,6 +102,7 @@ def add(
     project: Project = None,
     keep: Keep = None,
     max_height: MaxHeight = None,
+    title: Annotated[str | None, typer.Option(help="A title of your own")] = None,
     video: Annotated[
         bool, typer.Option("--video", help="Save as a video or audio page (any yt-dlp site)")
     ] = False,
@@ -99,11 +111,12 @@ def add(
     """Save a URL (article, git repository or video)."""
     setup_logging("WARNING")
     library = open_library()
+    media = _media(library, keep, max_height)
 
     async def go() -> None:
         result = await library.ingest(
-            url, why, tag or [], project=project, created_by=CLI_USER,
-            kind=Kind.MEDIA if video else None, media=library.media_choice(keep, max_height),
+            url, why, _clean(tag), project=project, created_by=CLI_USER, title=title,
+            kind=Kind.MEDIA if video else None, media=media,
         )  # fmt: skip
         r = result.resource
         if result.duplicate:
@@ -130,11 +143,15 @@ def upload(
     setup_logging("WARNING")
     library = open_library()
 
+    problems = 0
+
     async def go() -> None:
+        nonlocal problems
         jobs: list[str | None] = []
         for path in files:
             if not path.is_file():
                 warn(f"skipped {path}: not a file")
+                problems += 1
                 continue
             try:
                 result = await library.ingest_file(
@@ -143,6 +160,7 @@ def upload(
                 )  # fmt: skip
             except InvalidInput as exc:  # one bad file must not stop the others
                 typer.secho(f"{path}: {exc}", fg="red", err=True)
+                problems += 1
                 continue
             word = "Already saved" if result.duplicate else "Saved"
             typer.echo(f"{word}: {result.resource.slug} ({result.resource.id})")
@@ -151,12 +169,19 @@ def upload(
             await run_now(library, jobs, 3600)
 
     run(go())
+    if problems:
+        raise typer.Exit(1)
 
 
 @app.command("import")
 @handled
 def import_(
-    source: Annotated[Path, typer.Argument(help="Text with URLs, or a bookmarks .html export")],
+    source: Annotated[
+        Path,
+        typer.Argument(
+            help="Text with URLs, or a bookmarks .html export", exists=True, dir_okay=False
+        ),
+    ],
     why: Why = None,
     tag: Tags = None,
     project: Project = None,
@@ -169,8 +194,8 @@ def import_(
     setup_logging("WARNING")
     library = open_library()
     text = source.read_text(encoding="utf-8", errors="replace")
-    media = library.media_choice(keep, max_height)
-    report = run(library.import_urls(text, why, tag or [], project, CLI_USER, media))
+    media = _media(library, keep, max_height)
+    report = run(library.import_urls(text, why, _clean(tag), project, CLI_USER, media))
     for error in report.errors:
         warn(error)
     typer.echo(
@@ -200,7 +225,11 @@ def _read_text(path: Path | None) -> str | None:
         return None
     if str(path) == "-":
         return typer.get_text_stream("stdin").read()
-    return path.read_text(encoding="utf-8")
+    try:
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        fail(f"{path}: {exc.strerror if isinstance(exc, OSError) else exc}")
+        raise
 
 
 # ------------------------------------------------------------------------ find
@@ -295,10 +324,10 @@ def show(ref: str, as_json: Json = False) -> None:
     if as_json:
         print_json(resource_detail(resource, library.chunks(resource.id)))
         return
-    _print_resource(resource)
+    _print_resource(resource, library.files.resource_dir(resource.id))
 
 
-def _print_resource(r: Resource) -> None:
+def _print_resource(r: Resource, folder: Path) -> None:
     typer.secho(r.title, bold=True)
     facts = [
         ("id", r.id), ("slug", r.slug), ("kind", r.kind.value), ("status", r.status.value),
@@ -325,6 +354,7 @@ def _print_resource(r: Resource) -> None:
             typer.echo(f"    {a.path:<28} {a.size / 1e6:>9.1f} MB  {a.role}")
     for att in r.attachments:
         typer.echo(f"  attachment   {att.path} ({att.size / 1e6:.1f} MB)")
+    typer.echo(f"  files in     {folder}")
 
 
 @app.command()
@@ -336,7 +366,12 @@ def content(
     """Print a resource's text (the article, transcript, document or note)."""
     library = open_library()
     if chunk is not None:
-        typer.echo(library.content(ref, chunk, max_chars=10**9)["text"])
+        chunks = library.chunks(library.resolve(ref))
+        match = next((c for c in chunks if c["ord"] == chunk), None)
+        if match is None:
+            fail(f"no chunk {chunk} (this resource has {len(chunks)})")
+            return
+        typer.echo(match["text"])
         return
     text, _ = library.text(library.get(ref))
     if not text:
@@ -374,15 +409,19 @@ def edit(
     (alexandria refetch).
     """
     library = open_library()
+    if notes is not None and notes_file is not None:
+        fail("give --notes or --notes-file, not both")
     notes = _read_text(notes_file) if notes_file else notes
+    if keep == "video" and max_height is None:  # keep the resource's own cap
+        current = library.get(ref).media
+        max_height = current.max_height if current else None
     changes = Update(
         title=title, why=why, notes=notes, status=status,
-        project=project, scope=Scope.GLOBAL if project == "" else None,
-        media=library.media_choice(keep, max_height) if keep or max_height else None,
-        add_tags=tag or None, remove_tags=untag or None,
+        project=project.strip() if project is not None else None,
+        scope=Scope.GLOBAL if project is not None and not project.strip() else None,
+        media=_media(library, keep, max_height),
+        add_tags=_clean(tag) or None, remove_tags=_clean(untag) or None,
     )  # fmt: skip
-    if max_height and not keep:
-        fail("--max-height needs --keep video")
     if changes == Update():
         fail("nothing to change: give at least one option (see --help)")
     resource = run(library.update(ref, changes))
@@ -412,6 +451,9 @@ def refetch(
     downloaded again only when its options changed or a taller format is offered.
     """
     library = open_library()
+    # An empty value (an unset shell variable) must not widen the selection to everything.
+    if (tag and len(_clean(tag)) != len(tag)) or (project is not None and not project.strip()):
+        fail("empty --tag or --project: give a value, or leave the option out")
     filtered = any(x is not None for x in (kind, status, project, fetch_status)) or bool(tag)
     if refs and (filtered or every):
         fail("name resources, or use filters / --all, not both")
@@ -421,8 +463,8 @@ def refetch(
         targets = list(refs)
     else:
         targets = library.select(_filters(kind, status, tag, project, fetch_status))
-        notes = library.select(_filters(Kind.NOTE, status, tag, project, fetch_status))
-        targets = [t for t in targets if t not in set(notes)]  # nothing to fetch
+        notes = set(library.select(_filters(Kind.NOTE, status, tag, project, fetch_status)))
+        targets = [t for t in targets if t not in notes]  # nothing to fetch
         if not targets:
             typer.echo("No resource matches.")
             return
@@ -479,9 +521,12 @@ def attachment_add(
 def attachment_delete(ref: str, path: str, yes: Yes = False) -> None:
     """Delete an attachment (PATH as in show; with or without 'attachments/')."""
     path = path.removeprefix("attachments/")
+    library = open_library()
+    if not any(a.path == path for a in library.get(ref).attachments):
+        fail(f"no attachment {path!r} on {ref}")
     if not yes:
         typer.confirm(f"Delete attachment {path}?", abort=True)
-    run(open_library().delete_attachment(ref, path))
+    run(library.delete_attachment(ref, path))
     typer.echo("Deleted.")
 
 
@@ -511,7 +556,10 @@ def snapshot_delete(ref: str, snapshot_id: str, yes: Yes = False) -> None:
 
     If it is the current one, the newest remaining becomes current.
     """
+    library = open_library()
+    if library.get(ref).snapshot(snapshot_id) is None:
+        fail(f"no snapshot {snapshot_id!r} on {ref}")
     if not yes:
         typer.confirm(f"Delete snapshot {snapshot_id}?", abort=True)
-    run(open_library().delete_snapshot(ref, snapshot_id))
+    run(library.delete_snapshot(ref, snapshot_id))
     typer.echo("Deleted.")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
 
@@ -13,6 +14,7 @@ from alexandria.build import build
 from alexandria.cli._common import (
     Json,
     Limit,
+    Yes,
     app,
     fail,
     handled,
@@ -29,6 +31,13 @@ from alexandria.cli._common import (
 from alexandria.library import InvalidInput, Library, NotFound
 from alexandria.storage.index import Job
 from alexandria.views import job_view
+
+
+class JobStatus(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    DONE = "done"
+    FAILED = "failed"
 
 
 @app.command()
@@ -113,12 +122,12 @@ def _print_job(job: Job) -> None:
 
 @jobs_app.command("list")
 def jobs_list(
-    status: Annotated[str | None, typer.Option(help="queued, running, done or failed")] = None,
+    status: Annotated[JobStatus | None, typer.Option(help="Only jobs in this state")] = None,
     limit: Limit = 30,
     as_json: Json = False,
 ) -> None:
     """Recent jobs, newest first."""
-    jobs = open_library().index.jobs(status, limit=max(1, min(limit, 200)))
+    jobs = open_library().index.jobs(status.value if status else None, limit=limit)
     if as_json:
         print_json([job_view(j) for j in jobs])
         return
@@ -155,6 +164,8 @@ def jobs_retry(
         try:
             job = run(library.retry_job(one))
         except InvalidInput as exc:
+            if job_id:
+                raise
             warn(f"{one}: {exc}")
             continue
         if job is None:
@@ -251,9 +262,14 @@ def library_exports() -> None:
 
 @library_app.command("delete-export")
 @handled
-def library_delete_export(export_id: str) -> None:
+def library_delete_export(export_id: str, yes: Yes = False) -> None:
     """Delete an export kept in the data directory."""
-    open_library().delete_export(export_id)
+    library = open_library()
+    if not any(e.id == export_id for e in library.exports()):
+        fail(f"no export {export_id}")
+    if not yes:
+        typer.confirm(f"Delete export {export_id} and its parts?", abort=True)
+    library.delete_export(export_id)
     typer.echo("Deleted.")
 
 

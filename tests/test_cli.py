@@ -144,3 +144,56 @@ class TestCli:
         assert "attachment" not in ok(cli, "show", "me-at-the-zoo")
         ok(cli, "delete", "me-at-the-zoo", "--yes")
         assert "Nothing." in ok(cli, "list")
+
+
+class TestCliReview:
+    """Edge cases found in review: each would have misbehaved."""
+
+    def test_empty_filters_never_mean_everything(self, cli: CliRunner) -> None:
+        ok(cli, "note", "A note")
+        for args in (["--tag", ""], ["--tag", "  "], ["--project", ""]):
+            assert "empty --tag or --project" in refused(cli, "refetch", *args, "--yes")
+
+    def test_confirmation(self, cli: CliRunner, settings: Settings) -> None:
+        ok(cli, "add", VIDEO)
+        drain(settings)
+        result = cli.invoke(app, ["refetch", "--kind", "media"], input="n\n")
+        assert result.exit_code == 1 and "Aborted" in result.output
+        assert "No jobs." not in ok(cli, "jobs", "list", "--status", "done")
+        assert "No jobs." in ok(cli, "jobs", "list", "--status", "queued")
+
+    def test_video_height_rules(
+        self, cli: CliRunner, settings: Settings, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("ALEXANDRIA_MEDIA__DOWNLOADS", "true")
+        assert "needs --keep video" in refused(cli, "add", VIDEO, "--max-height", "720")
+        ok(cli, "add", VIDEO, "--keep", "video", "--max-height", "480")
+        slug = json.loads(ok(cli, "lookup", VIDEO, "--json"))["slug"]
+
+        def media() -> object:
+            return json.loads(ok(cli, "show", slug, "--json"))["media"]
+
+        assert media() == {"keep": "video", "max_height": 480}
+        ok(cli, "edit", slug, "--keep", "video")  # the cap stays
+        assert media() == {"keep": "video", "max_height": 480}
+        ok(cli, "edit", slug, "--keep", "audio")  # a height means nothing for audio
+        assert media() == {"keep": "audio", "max_height": None}
+
+    def test_clean_errors(self, cli: CliRunner, settings: Settings, tmp_path: Path) -> None:
+        ok(cli, "note", "N")
+        assert "No such file" in refused(cli, "edit", "n", "--notes-file", str(tmp_path / "x"))
+        assert "not both" in refused(cli, "edit", "n", "--notes", "a", "--notes-file", "-")
+        assert refused(cli, "upload", str(tmp_path / "missing.pdf"))
+        assert cli.invoke(app, ["import", str(tmp_path / "missing.txt")]).exit_code == 2
+        assert "no chunk 7" in refused(cli, "content", "n", "--chunk", "7")
+        assert "no snapshot" in refused(cli, "snapshot", "delete", "n", "nope")
+        assert "no attachment" in refused(cli, "attachment", "delete", "n", "nope.pdf")
+        assert "no export" in refused(cli, "library", "delete-export", "nope")
+
+    def test_retry_refused_exits_1(self, cli: CliRunner, settings: Settings) -> None:
+        ok(cli, "add", PRIVATE_VIDEO)
+        drain(settings)
+        job_id = ok(cli, "jobs", "list", "--status", "failed").split()[0]
+        slug = json.loads(ok(cli, "lookup", PRIVATE_VIDEO, "--json"))["slug"]
+        ok(cli, "refetch", slug)  # a new fetch is pending
+        assert "already queued" in refused(cli, "jobs", "retry", job_id)

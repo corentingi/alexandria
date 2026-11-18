@@ -102,4 +102,4 @@ MaxHeight = Annotated[
 ]
 Json = Annotated[bool, typer.Option("--json", help="Print JSON (the REST API's shape)")]
 Yes = Annotated[bool, typer.Option("--yes", "-y", help="Do not ask for confirmation")]
-Limit = Annotated[int, typer.Option(help="At most this many (up to 200)")]
+Limit = Annotated[int, typer.Option(help="At most this many", min=1, max=200, clamp=True)]
