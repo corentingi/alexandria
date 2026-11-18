@@ -10,6 +10,7 @@ import httpx
 import pytest
 import respx
 
+from alexandria.config import Settings
 from alexandria.jobs import Worker
 from alexandria.library import InvalidInput, Library, NotFound, Update
 from alexandria.models import FetchStatus, Kind, Scope, Status
@@ -708,3 +709,35 @@ class TestSmallFixes:
         other.revoke("agent")
         os.utime(tmp_path / "tokens.yaml", ns=(before.st_atime_ns, before.st_mtime_ns))
         assert store.verify(secret) is None
+
+
+class TestBulkAndLocks:
+    async def test_tags_select_and_refetch_many(self, library: Library) -> None:
+        a = (await library.ingest("https://a.example/1", tags=["x", "y"])).resource
+        await library.create_note("N", "", None, ["x"])
+        r = await library.update(a.id, Update(add_tags=["Z", "x"], remove_tags=["y"]))
+        assert r.tags == ["x", "z"]
+        assert library.select(SearchFilters(tags=["X"])) != []
+        assert library.select(SearchFilters(fetch_status="pending")) == [a.id]
+        report = await library.refetch_many([a.id, "n", "nope"])
+        reasons = dict(report.skipped)
+        assert report.queued == [] and "already queued" in reasons[a.id]
+        assert "no source" in reasons["n"] and "nope" in reasons
+
+    async def test_lock_excludes_another_process(self, settings: Settings) -> None:
+        # Two Library objects share nothing in memory, like the CLI and the server.
+        first, second = Library(settings), Library(settings)
+        try:
+            async with first.lock("r1"):
+                with pytest.raises(TimeoutError):
+                    async with asyncio.timeout(0.2):
+                        async with second.lock("r1"):
+                            pass
+                async with second.lock("r2"):  # another resource is free
+                    pass
+            async with asyncio.timeout(1):
+                async with second.lock("r1"):  # released
+                    pass
+        finally:
+            first.close()
+            second.close()

@@ -28,3 +28,4 @@ mark the old one superseded.
 | [0020](0020-parsers-run-in-a-child-process.md) | Untrusted files are parsed in a child process (amends 0012) | Accepted |
 | [0021](0021-video-and-audio-with-yt-dlp.md) | Video and audio pages are fetched with yt-dlp | Accepted |
 | [0022](0022-guarded-proxy-for-child-processes.md) | Child processes reach the network through a guarded proxy (extends 0019) | Accepted |
+| [0023](0023-command-line-next-to-the-server.md) | The command line works next to the running server | Accepted |

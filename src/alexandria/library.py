@@ -7,6 +7,8 @@ per-resource asyncio lock serializes edits to one resource (API PATCH vs. the wo
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import fcntl
 import json
 import logging
 import os
@@ -158,7 +160,6 @@ class Library:
         }
         self.fetchers = defaults | (fetchers or {})
         self._locks: dict[str, asyncio.Lock] = {}
-        self._ingest_lock = asyncio.Lock()
         self.max_attempts = settings.worker.max_attempts
 
     def media_levels(self) -> list[str]:
@@ -171,7 +172,9 @@ class Library:
         if not keep:
             return None
         try:
-            return MediaChoice.model_validate({"keep": keep, "max_height": max_height or None})
+            # A height only means something for a video (the UI always sends one).
+            height = (max_height or None) if keep == "video" else None
+            return MediaChoice.model_validate({"keep": keep, "max_height": height})
         except ValidationError as exc:
             raise InvalidInput("; ".join(e["msg"] for e in exc.errors())) from exc
 
@@ -186,8 +189,34 @@ class Library:
     def close(self) -> None:
         self.index.close()
 
-    def lock(self, resource_id: str) -> asyncio.Lock:
-        return self._locks.setdefault(resource_id, asyncio.Lock())
+    def lock(self, resource_id: str) -> contextlib.AbstractAsyncContextManager[None]:
+        """Exclusive access to one resource's files, for a read-modify-write."""
+        return self._exclusive(resource_id)
+
+    def ingest_lock(self) -> contextlib.AbstractAsyncContextManager[None]:
+        """Held from "is this URL saved?" to the new resource's first write."""
+        return self._exclusive("ingest")
+
+    @contextlib.asynccontextmanager
+    async def _exclusive(self, key: str) -> AsyncIterator[None]:
+        """An asyncio lock for the tasks of this process, and an ``flock`` on
+        ``<data>/locks/<key>.lock`` for other processes: the CLI runs next to the server
+        on the same files (ADR-0023). Lock files are never deleted (an unlinked file
+        would let a newcomer lock a fresh inode while the old one is held)."""
+        async with self._locks.setdefault(key, asyncio.Lock()):
+            directory = self.settings.data_dir / "locks"
+            directory.mkdir(exist_ok=True)
+            fd = os.open(directory / f"{key}.lock", os.O_RDWR | os.O_CREAT, 0o600)
+            try:
+                while True:  # polled, not a blocking call: stays cancellable
+                    try:
+                        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        break
+                    except BlockingIOError:
+                        await asyncio.sleep(0.02)
+                yield
+            finally:
+                os.close(fd)  # releases the flock
 
     # ---------------------------------------------------------------- reads
 
@@ -343,7 +372,7 @@ class Library:
         if detected.kind == Kind.MEDIA:
             media = self._media_choice(media)
         await self._guard(detected.canonical_url)
-        async with self._ingest_lock:
+        async with self.ingest_lock():
             existing = self.index.find_by_canonical_url(detected.canonical_url)
             if existing is None:
                 return self._create_from_url(detected, url, why, tags, scope, project, title,
@@ -378,7 +407,7 @@ class Library:
         created_by: str | None,
         media: MediaChoice | None = None,
     ) -> IngestResult:
-        """Caller holds ``_ingest_lock``. Synchronous: no other task runs in between."""
+        """Caller holds ``ingest_lock()``."""
         now = utcnow()
         resource_id = new_id()
         if detected.forge == "github":
@@ -445,7 +474,7 @@ class Library:
             sha = await asyncio.to_thread(sha256_file, tmp)  # up to attachments.max_mb
             canonical = f"urn:sha256:{sha}"
             scope, project = _scope(scope, project)
-            async with self._ingest_lock:
+            async with self.ingest_lock():
                 existing = self.index.find_by_canonical_url(canonical)
                 if existing is not None:
                     return await self._add_to_existing(existing, why, tags)
@@ -599,7 +628,7 @@ class Library:
             raise InvalidInput("a note needs a title")
         now = utcnow()
         scope, project = _scope(scope, project)
-        async with self._ingest_lock:
+        async with self.ingest_lock():
             resource = Resource(
                 id=new_id(),
                 slug=unique_slug(title, self.index.slug_taken),
@@ -701,11 +730,10 @@ class Library:
         report = RefetchReport()
         for ref in refs:
             try:
-                job_id = await self.refetch(ref)
+                resource_id = self.resolve(ref)
+                report.queued.append((resource_id, await self.refetch(resource_id)))
             except (InvalidInput, NotFound) as exc:
                 report.skipped.append((ref, str(exc)))
-                continue
-            report.queued.append((self.resolve(ref), job_id))
         return report
 
     async def retry_job(self, job_id: str) -> Job | None:

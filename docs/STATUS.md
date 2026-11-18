@@ -34,6 +34,7 @@
 ## Known limits
 
 - DNS-rebinding TOCTOU between the SSRF check and the connection (ADR-0007).
+- A server restart wipes work a CLI process is staging at that moment (ADR-0023).
 - Trafilatura sometimes turns lines starting with `#` inside unfenced code into headings.
 - Git clone timeout falls back to shallow on *any* non-"not found" failure, not only size.
 - A review on 2026-11-02 found 8 issues, all fixed (ADR-0014), each with a regression test.
