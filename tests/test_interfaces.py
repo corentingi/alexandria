@@ -668,6 +668,7 @@ class TestMedia:
         csrf = TestUi().login(client, tokens["write"])
         assert "For the videos among these links" in client.get("/add?tab=import").text
         settings.media.downloads = True
+        assert "up to 2160p (4K)</option>" in client.get("/add?tab=import").text
         form = {"csrf": csrf, "text": text, "keep": "video", "max_height": "480"}
         assert client.post("/import", data=form, follow_redirects=False).status_code == 303
         jobs = client.get("/api/v1/jobs", headers=auth(r)).json()["jobs"]

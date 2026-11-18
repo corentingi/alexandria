@@ -4,6 +4,7 @@
     option's hint shows (CSS :has, no script). -#}
 {%- set keep = (choice.keep.value if choice else media_defaults.keep.value) -%}
 {%- set keep = keep if keep in media_levels else "transcript" -%}
+{%- set names = {480: "SD", 720: "HD", 1080: "Full HD", 1440: "2K", 2160: "4K"} -%}
 {%- set height = (choice.max_height if choice and choice.max_height else media_defaults.max_height) -%}
 <fieldset class="media-options">
   <legend>{{ legend or "What to keep of this video" }}</legend>
@@ -13,7 +14,7 @@
       <label><input class="sr-only" type="radio" name="keep" value="{{ level }}" {{ "checked" if level == keep }} {{ "disabled" if level not in media_levels }}>{{ label }}</label>
       {%- endfor %}
     </span>
-    {% if "video" in media_levels %}<select class="media-height" name="max_height" aria-label="Video height at most">{% for h in video_heights %}<option value="{{ h }}" {{ "selected" if h == height }}>up to {{ h }}p</option>{% endfor %}</select>{% endif %}
+    {% if "video" in media_levels %}<select class="media-height" name="max_height" aria-label="Video height at most">{% for h in video_heights %}<option value="{{ h }}" {{ "selected" if h == height }}>up to {{ h }}p{% if h in names %} ({{ names[h] }}){% endif %}</option>{% endfor %}</select>{% endif %}
   </div>
   <small class="media-hint" data-for="transcript">Details, captions and thumbnail; searchable.</small>
   <small class="media-hint" data-for="audio">The transcript, plus the audio: about 50 MB an hour.</small>
