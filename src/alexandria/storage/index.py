@@ -149,6 +149,7 @@ class SearchFilters:
     status: str | None = None
     captured_after: str | None = None
     captured_before: str | None = None
+    fetch_status: str | None = None
 
 
 @dataclass
@@ -336,6 +337,19 @@ class Index:
             return {r["status"]: r["n"] for r in rows}
 
     # -- search ------------------------------------------------------------------
+
+    def ids(self, filters: SearchFilters) -> list[str]:
+        """Every resource id matching the filters, newest first."""
+        where, params = _filter_sql(filters)
+        with self.read() as db:
+            return [
+                r["id"]
+                for r in db.execute(
+                    f"SELECT r.id FROM resources r WHERE {where} "  # noqa: S608
+                    "ORDER BY r.captured_at DESC, r.id DESC",
+                    params,
+                )
+            ]
 
     def search(
         self,
@@ -715,6 +729,9 @@ def _filter_sql(f: SearchFilters) -> tuple[str, list[Any]]:
         params.append(f.status)
     else:
         clauses.append("r.status != 'archived'")
+    if f.fetch_status:
+        clauses.append("r.fetch_status = ?")
+        params.append(f.fetch_status)
     if f.captured_after:
         clauses.append("r.captured_at >= ?")
         params.append(f.captured_after)

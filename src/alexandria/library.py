@@ -12,7 +12,7 @@ import logging
 import os
 import re
 import shutil
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -104,12 +104,14 @@ class Update:
 
     why: str | None = None
     notes: str | None = None
-    tags: list[str] | None = None
+    tags: list[str] | None = None  # replaces every tag
     status: Status | None = None
     title: str | None = None
     project: str | None = None
     scope: Scope | None = None
     media: MediaChoice | None = None  # takes effect on the next fetch
+    add_tags: list[str] | None = None  # kept with the current tags
+    remove_tags: list[str] | None = None
 
 
 @dataclass
@@ -126,6 +128,12 @@ MAX_IMPORT = 5000
 class ReindexReport:
     indexed: int = 0
     errors: list[str] = field(default_factory=list)
+
+
+@dataclass
+class RefetchReport:
+    queued: list[tuple[str, str]] = field(default_factory=list)  # (resource id, job id)
+    skipped: list[tuple[str, str]] = field(default_factory=list)  # (ref, why)
 
 
 JobHandler = Callable[[Job], Awaitable[None]]
@@ -212,6 +220,12 @@ class Library:
         hits = self.index.search(query, filters, limit=max(1, min(limit, 200)), offset=offset)
         rows = self.index.rows([h.id for h in hits])
         return [(h, rows[h.id]) for h in hits if h.id in rows]
+
+    def select(self, filters: SearchFilters) -> list[str]:
+        """The ids of every resource matching ``filters``, newest first (bulk actions)."""
+        if filters.tags:
+            filters.tags = normalize_tags(filters.tags)
+        return self.index.ids(filters)
 
     def tags(self) -> list[tuple[str, int]]:
         return self.index.list_tags()
@@ -628,6 +642,10 @@ class Library:
                 resource.notes = changes.notes
             if changes.tags is not None:
                 resource.tags = changes.tags
+            if changes.add_tags or changes.remove_tags:
+                drop = set(normalize_tags(changes.remove_tags or []))
+                merged = dict.fromkeys([*resource.tags, *normalize_tags(changes.add_tags or [])])
+                resource.tags = [t for t in merged if t not in drop]
             if changes.project is not None or changes.scope is not None:
                 project = resource.project if changes.project is None else changes.project
                 scope = changes.scope or (Scope.PROJECT if changes.project else resource.scope)
@@ -676,6 +694,19 @@ class Library:
             self.files.write(resource)
             self.index.upsert(resource, None)
             return self._enqueue("fetch", resource.id)
+
+    async def refetch_many(self, refs: Iterable[str]) -> RefetchReport:
+        """Re-fetch each resource; one that cannot be (a note, a fetch already queued, an
+        unknown ref) is reported, not raised."""
+        report = RefetchReport()
+        for ref in refs:
+            try:
+                job_id = await self.refetch(ref)
+            except (InvalidInput, NotFound) as exc:
+                report.skipped.append((ref, str(exc)))
+                continue
+            report.queued.append((self.resolve(ref), job_id))
+        return report
 
     async def retry_job(self, job_id: str) -> Job | None:
         """Queue a failed job again. ``None``: no failed job with this id. A fetch is not
