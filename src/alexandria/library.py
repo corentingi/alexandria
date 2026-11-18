@@ -443,7 +443,7 @@ class Library:
         resource.status = Status.KEPT if resource.why else Status.INBOX
         self.files.write(resource)
         self.index.upsert(resource, [])
-        job_id = self._enqueue("fetch", resource.id)
+        job_id = self._enqueue_fetch(resource)
         return IngestResult(resource, duplicate=False, job_id=job_id)
 
     async def ingest_file(
@@ -510,7 +510,7 @@ class Library:
                 shutil.move(tmp, safe_join(self.files.source_dir(resource.id), name))
                 self.files.write(resource)
                 self.index.upsert(resource, [])
-                job_id = self._enqueue("fetch", resource.id)
+                job_id = self._enqueue_fetch(resource)
             return IngestResult(resource, duplicate=False, job_id=job_id)
         finally:
             shutil.rmtree(staging, ignore_errors=True)
@@ -722,7 +722,7 @@ class Library:
             resource.fetch_error = None
             self.files.write(resource)
             self.index.upsert(resource, None)
-            return self._enqueue("fetch", resource.id)
+            return self._enqueue_fetch(resource)
 
     async def refetch_many(self, refs: Iterable[str]) -> RefetchReport:
         """Re-fetch each resource; one that cannot be (a note, a fetch already queued, an
@@ -907,6 +907,16 @@ class Library:
         job_id = new_id()
         self.index.enqueue(job_id, job_type, resource_id, payload, run_after)
         return job_id
+
+    def _enqueue_fetch(self, resource: Resource) -> str:
+        """A video is fetched in its site's lane: one download at a time per site, since
+        YouTube refuses stream links (HTTP 403) to an address downloading several."""
+        payload = None
+        if resource.kind == Kind.MEDIA:
+            host = urlsplit(resource.canonical_url or resource.source_url or "").hostname
+            site = (host or "").removeprefix("www.").removeprefix("m.")
+            payload = {"lane": f"media:{site}"}
+        return self._enqueue("fetch", resource.id, payload)
 
     def is_final_attempt(self, job: Job, exc: BaseException) -> bool:
         permanent = isinstance(exc, (FetchError, InvalidInput)) and getattr(exc, "permanent", True)
@@ -1351,7 +1361,7 @@ class Library:
             chunks, role = self._chunks_or_error(resource, report.errors)
             self.index.upsert(resource, chunks, role or "")
         if refetch and resource.kind != Kind.NOTE:
-            self._enqueue("fetch", resource_id)
+            self._enqueue_fetch(resource)
         report.imported.append(resource_id)
 
     async def _job_export(self, job: Job) -> None:

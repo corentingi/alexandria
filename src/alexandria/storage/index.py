@@ -442,7 +442,11 @@ class Index:
             )
 
     def claim_job(self, only: Collection[str] | None = None) -> Job | None:
-        """Claim the next due job; with ``only``, the next due job among these ids."""
+        """Claim the next due job; with ``only``, the next due job among these ids.
+
+        A job with a ``lane`` in its payload waits while another job of the same lane
+        runs (one video download per site), without holding a worker slot.
+        """
         now = iso(utcnow())
         among, params = "", [now, now]
         if only is not None:
@@ -454,7 +458,10 @@ class Index:
             row = db.execute(
                 "UPDATE jobs SET status = 'running', attempts = attempts + 1, updated_at = ? "  # noqa: S608 - only ? marks
                 "WHERE id = (SELECT id FROM jobs WHERE status = 'queued' AND run_after <= ? "
-                f"{among}ORDER BY run_after, created_at LIMIT 1) RETURNING *",
+                f"{among}AND (payload ->> '$.lane' IS NULL OR payload ->> '$.lane' NOT IN "
+                "(SELECT payload ->> '$.lane' FROM jobs WHERE status = 'running' "
+                "AND payload ->> '$.lane' IS NOT NULL)) "
+                "ORDER BY run_after, created_at LIMIT 1) RETURNING *",
                 params,
             ).fetchone()
         return _job(row) if row else None

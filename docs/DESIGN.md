@@ -311,7 +311,8 @@ immediately.
    track), the thumbnail and, if `media.keep` asks for it, the audio (as served, m4a
    first) or the video (MP4, the highest resolution up to `max_height`, then H.264). The
    resolution is the shorter side: a vertical 1080x1920 video is 1080p. Fragments are
-   downloaded by yt-dlp itself; ffmpeg only merges local files.
+   downloaded by yt-dlp itself; ffmpeg only merges local files. One video downloads at
+   a time per site (a job lane): YouTube refuses stream links to parallel downloads.
 3. Snapshot: `content.md` (description, then the transcript in paragraphs of about a
    minute under the chapters, each with its timestamp), `info.json` (without stream
    URLs), `captions.<lang>.vtt`, `thumbnail.*`, `media.*`.

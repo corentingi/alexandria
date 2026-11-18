@@ -38,6 +38,10 @@ the separate video and audio streams above 360p.
 - Limits: `media.max_mb` per file (4 GB), and videos longer than
   `media.max_duration_min` (6 h) keep their transcript only. A skipped file is noted in
   `meta.media_skipped`; the fetch still succeeds.
+- One video download at a time per site: a fetch job carries a lane
+  (`media:youtube.com`) and is not claimed while another job of its lane runs. YouTube
+  answered HTTP 403 to some stream links when two downloads ran at once; the waiting job
+  holds no worker slot, so articles still run. A burst of videos takes longer.
 - A re-fetch hard-links the previous media file when the same thing is asked and no
   higher resolution is offered under the cap, instead of downloading gigabytes again.
 - Private, removed, members-only and age-restricted videos fail at once. A bot check

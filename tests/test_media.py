@@ -377,3 +377,26 @@ class TestFormatChoice:
     def test_resolution(self) -> None:
         assert resolution(1080, 1920) == resolution(1920, 1080) == 1080
         assert resolution(None, 720) == 720 and resolution(None, None) is None
+
+
+class TestOneDownloadPerSite:
+    async def test_lanes(self, media_library: Library) -> None:
+        a = await media_library.ingest(VIDEO)
+        b = await media_library.ingest("https://youtu.be/abcdefghijk")
+        c = await media_library.ingest("https://vimeo.com/123456")
+        note = await media_library.create_note("n", "", None, [])
+        index = media_library.index
+        jobs = {j.resource_id: j for j in index.jobs(limit=10)}
+        assert jobs[a.resource.id].payload == {"lane": "media:youtube.com"}
+        assert jobs[b.resource.id].payload == {"lane": "media:youtube.com"}
+        assert jobs[c.resource.id].payload == {"lane": "media:vimeo.com"}
+        assert note.id not in jobs
+
+        first = index.claim_job()
+        assert first is not None and first.resource_id == a.resource.id
+        other = index.claim_job()  # the second YouTube video waits; Vimeo does not
+        assert other is not None and other.resource_id == c.resource.id
+        assert index.claim_job() is None
+        index.finish_job(first.id)
+        after = index.claim_job()
+        assert after is not None and after.resource_id == b.resource.id
