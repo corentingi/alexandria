@@ -45,8 +45,16 @@ docker compose pull && docker compose up -d
 ```
 
 `:latest` follows the main branch; pin a version (`:0.1.0`) to update only when you choose.
+The sidebar's footer shows the version running and its build date.
 Data stays in the folder. If release notes ask for it, rebuild the search index under
 **Settings → Index** (it is rebuilt from the files).
+
+## Command line
+
+Every common action also works from a shell on the NAS, for example
+`docker compose exec alexandria alexandria list --status inbox` or
+`docker compose exec alexandria alexandria snapshot prune --site youtube.com`. See
+[CLI.md](CLI.md).
 
 ## HTTPS (optional)
 

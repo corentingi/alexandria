@@ -330,7 +330,8 @@ immediately.
 
 ### 8.6 Re-fetch
 `refetch(ref)` enqueues a new fetch that creates a new snapshot. Previous snapshots are
-kept. Chunks and FTS are rebuilt from the new current snapshot. Incremental `git fetch`
+kept (delete them one by one, or all but the current with `alexandria snapshot prune`).
+Chunks and FTS are rebuilt from the new current snapshot. Incremental `git fetch`
 into the previous bare repository is on the roadmap.
 
 ### 8.7 Jobs and failures
@@ -343,7 +344,10 @@ into the previous bare repository is on the roadmap.
 - Retries: 3 attempts with backoff (1 min, 5 min, 30 min). Permanent errors (404, 410,
   invalid URL, blocked by the SSRF guard, over the size cap) fail immediately.
 - At startup: jobs left in `running` are reset to `queued`, and `tmp/` is wiped.
-- A per-resource asyncio lock serializes edits to `resource.md` (API PATCH vs worker).
+- A per-resource lock serializes edits to `resource.md` (API PATCH vs worker vs CLI):
+  an asyncio lock plus an `flock` on `<data>/locks/<id>.lock` (ADR-0023).
+- A video's fetch carries a lane per site; it is not claimed while another job of its
+  lane runs (one download per site, ADR-0021).
 
 ## 9. Search
 
@@ -411,7 +415,9 @@ GET    /healthz                      (no auth)
 - **Resource page**: metadata; editable `why`, notes, tags and status; rendered content;
   snapshot history; artifact and attachment downloads; re-fetch button.
 - **Inbox**: resources with no `why`, each with an inline field to add one.
-- **Add**: URL plus `why`, with the cursor placed in the `why` field.
+- **Add**: URL plus `why`, with the cursor placed in the `why` field. A video link shows
+  what to keep (transcript, audio, video and its resolution); the bulk import tab takes
+  the same choice for the videos among its links.
 - **Bookmarklet** shown in the UI:
   `javascript:location.href='http://<host>:8080/add?url='+encodeURIComponent(location.href)+'&title='+encodeURIComponent(document.title)`
 - **Jobs**: queued, running and failed jobs, with a retry button.
@@ -419,7 +425,8 @@ GET    /healthz                      (no auth)
   scopes apply.
 
 ### 10.4 CLI (Typer)
-Every common action, so a shell in the container can do what the UI does. Commands open
+Every common action, so a shell in the container can do what the UI does (reference and
+examples: [CLI.md](CLI.md)). Commands open
 the data directory through `Library`; the server's worker runs the jobs they queue. Read
 commands take `--json` (the REST API's shape). Refs are ids or slugs. Resource locks are
 `flock`s, so the CLI and the server take turns (ADR-0023).
@@ -518,6 +525,9 @@ metadata; relations between resources; browser extension; integration with the
   Deno (for videos; `--build-arg MEDIA=slim` leaves the last two out). Multi-arch
   build (amd64 and arm64). Non-root user, `VOLUME /data`, `EXPOSE 8080`, `HEALTHCHECK`
   on `/healthz`, entrypoint `alexandria serve`.
+- The build records `git describe` and its date (`src/alexandria/_build.txt`), from the
+  repository given as the `git` build context (docker-compose.yml, CI). The UI footer,
+  `/healthz` and `alexandria version` show it.
 - The volume **must be local storage on the host** (no NFS or SMB mount), because SQLite
   WAL mode requires working file locking and shared memory.
 

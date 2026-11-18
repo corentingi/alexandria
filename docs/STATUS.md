@@ -30,6 +30,11 @@
 | Token management in the UI: create (secret shown once), scope, revoke; self and last admin protected (ADR-0018) | `test_manage_tokens`, `test_last_admin_is_kept`; by hand |
 | Library export/import in independent ~2 GB tar parts (ADR-0015) | `test_transfer.py` (round trip, any order, duplicates, hostile tars, UI) |
 | Videos with yt-dlp: transcript by default, audio or capped video on request, played in the page; every request through a guarded proxy (ADR-0021, ADR-0022) | `test_media.py`, `test_proxy.py`, `TestMedia` in `test_interfaces.py`; by hand against YouTube (transcript, audio, video, re-fetch reusing the file) |
+| Video resolution: the highest up to the cap, on the shorter side (vertical Shorts get 1080x1920); yt-dlp's real format choice tested offline | `TestFormatChoice`; by hand: a 1080p film and 19 Shorts re-fetched |
+| One video download at a time per site (job lanes), after YouTube answered 403 to parallel downloads | `TestOneDownloadPerSite` |
+| Video options for a bulk import, in the UI, REST and CLI | `TestMedia::test_import` |
+| Command line for every common action, bulk refetch and snapshot prune by filters, locks shared with the server (ADR-0023) | `test_cli.py`, `TestBulkAndLocks`, `TestPrune`; by hand in the container |
+| Build version: `git describe` and build date in the footer, `/healthz` and `alexandria version` | `test_build.py`; by hand |
 
 ## Known limits
 
@@ -43,7 +48,8 @@
   limits, accessibility and the UI, plus inbox keyboard triage, tag completion and
   "already saved" on the add page. Still open from it: search snippets for every match
   before the limit, no HTTP connection reuse, no time limit on a whole job (only on
-  downloads, parsing and git clones), bulk actions, tag rename/merge, a projects page.
+  downloads, parsing and git clones), bulk actions in the UI (the CLI has bulk refetch
+  and prune), tag rename/merge, a projects page.
 - Fetches ignore `HTTP_PROXY`/`HTTPS_PROXY`: a proxy would bypass the SSRF guard.
 - No incremental `git fetch` on re-fetch: each snapshot is a full new clone.
 - `stars`, `topics`… are refreshed only on re-fetch.
@@ -53,6 +59,9 @@
 - Videos: no speech-to-text, so a video without captions keeps only its description. No
   cookies, so members-only and age-restricted videos fail. yt-dlp is pinned and needs
   updating as sites change (not automated yet). Playlists are refused, not imported.
+  YouTube sometimes refuses a stream link (HTTP 403) during a burst; the job retries a
+  minute later. A long video download holds one of the two worker slots.
+- The CLI has no date filters or paging on `list`/`search`, and `refetch` has no `--now`.
 - MCP cannot upload files (agents pass a URL to `ingest_url` instead).
 - Export/import: UI and CLI only (no REST/MCP); an export is consistent per resource, not
   for the whole library at one instant; import never merges edits made on both sides.

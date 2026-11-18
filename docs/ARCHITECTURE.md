@@ -21,17 +21,19 @@ changes data. `views.py` holds the JSON shapes shared by REST and MCP.
    (`security.check_url`), checks `canonical_url` for a duplicate, writes `resource.md`
    (`storage/files.py`), indexes it (`storage/index.py`) and enqueues a `fetch` job.
 2. `jobs.Worker` (N asyncio tasks in the server process) claims the job with an atomic
-   `UPDATE … RETURNING`, and calls `Library._job_fetch`.
+   `UPDATE … RETURNING`, and calls `Library._job_fetch`. A video's job has a lane
+   (`media:youtube.com`): it is not claimed while another of its lane runs.
 3. The kind's fetcher (`fetchers/article.py`, `fetchers/git_repo.py`,
    `fetchers/media.py`) works in `tmp/<job-id>/` and returns a `SnapshotResult`.
-4. Under the resource's asyncio lock, the staging dir is renamed to
+4. Under the resource's lock (an asyncio lock plus an `flock`, so the CLI and the server
+   take turns, ADR-0023), the staging dir is renamed to
    `snapshots/<timestamp>/`, `resource.md` is re-read (a human may have edited it),
    updated and rewritten, then chunks and FTS rows are rebuilt.
 5. Failures: `FetchError(permanent=…)`. Permanent ones (404, SSRF, size cap) fail at once;
    others retry with backoff (`worker.backoff_s`) up to `worker.max_attempts`.
 
-The CLI (`alexandria add`) writes the same files and the same queue; a running server's
-worker picks the job up (same SQLite file, WAL mode). `--now` runs it in-process.
+The CLI ([CLI.md](CLI.md)) writes the same files and the same queue; a running server's
+worker picks the jobs up (same SQLite file, WAL mode). `--now` runs them in-process.
 
 Documents (ADR-0012): `Library.ingest_file` stores the upload in `source/`, keyed by its
 SHA-256 (`canonical_url = urn:sha256:…`), and enqueues the same `fetch` job; for a
@@ -72,5 +74,6 @@ See DESIGN.md §5. Additions: `tokens.yaml` (ADR-0003), `session_secret`, and th
 | `walls.py` | Known login/bot/paywall sites and bot-check detection |
 | `transfer.py` | Export parts (tar writer, size split) and safe unpacking for import |
 | `auth.py` | Token store and scopes |
+| `build.py` | Which build is running: `git describe` and date from the image, or git |
 | `api/`, `mcp_server.py`, `ui/`, `cli/` | Interfaces (`cli/resources.py`: resource commands; `cli/admin.py`: server, jobs, tokens, transfers) |
 | `app.py` | ASGI composition, bootstrap token |

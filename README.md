@@ -12,10 +12,12 @@ it. Agents read and write through MCP, you use a small web UI. One container, on
   file is kept too, ready to be analysed later.
 - **Videos** — YouTube, Vimeo, Dailymotion, Twitch, SoundCloud (and any site yt-dlp
   supports, on request): details, thumbnail and the captions as a searchable transcript;
-  the audio, or the video up to a chosen height, when asked
-  ([ADR-0021](docs/adrs/0021-video-and-audio-with-yt-dlp.md)).
+  the audio, or the video up to a chosen resolution (SD to 4K), when asked, played in the
+  page ([ADR-0021](docs/adrs/0021-video-and-audio-with-yt-dlp.md)).
 - **Notes** — Markdown, searchable at once.
 - **Bulk import** — paste links or upload a browser bookmarks export.
+- **Command line** — every common action from a shell, also inside the container
+  ([docs/CLI.md](docs/CLI.md)).
 - **Files are the truth** — every resource is a folder with a `resource.md`; the SQLite
   index can be deleted and rebuilt.
 
@@ -42,7 +44,8 @@ Or build from source with `docker compose up -d --build` (data in `./data`, or s
 uid 1000.
 
 More tokens: Settings → Tokens (create, change scope, revoke), or
-`docker exec alexandria alexandria token create claude --scope write`.
+`docker exec alexandria alexandria token create claude --scope write`. The version
+running is in the sidebar's footer, with its build date.
 
 ## Connect an agent
 
@@ -60,12 +63,10 @@ REST API at `/api/v1` (docs at `/api/docs`), including `POST /documents` (multip
 `POST /import` (queued as a job: follow it with `GET /jobs/{id}`). The UI's Settings page
 has a bookmarklet.
 
-Every common action is also a command, for scripts or a shell in the container
-(`docker compose exec alexandria alexandria --help`): `add`, `upload`, `import`, `note`,
-`list`, `search`, `show`, `content`, `edit`, `refetch` (one resource, or every one matching
-filters, e.g. `refetch --site youtube.com`), `delete`, `jobs list|show|retry`, `attachment`,
-`snapshot list|delete|prune` (prune keeps only the current snapshot), `stats`, `token`, `library export|import`, `backup`, `reindex`. Read commands
-take `--json`.
+Every common action is also a command, for scripts or a shell in the container:
+`docker compose exec alexandria alexandria --help`. For example `alexandria list --status
+inbox`, `alexandria refetch --site youtube.com` or `alexandria snapshot prune --all`. See
+[docs/CLI.md](docs/CLI.md).
 
 ## Restore a repository archive
 
@@ -97,6 +98,7 @@ over `<data>/config.yaml`. See [docs/DESIGN.md §13](docs/DESIGN.md#13-configura
 
 - [docs/DESIGN.md](docs/DESIGN.md) — the v1 design.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — how the code is organized.
+- [docs/CLI.md](docs/CLI.md) — the command line, with examples.
 - [docs/NAS.md](docs/NAS.md) — installing on a NAS from the published image.
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) — running, testing, the gate.
 - [docs/adrs/](docs/adrs/README.md) — decisions and their costs.
