@@ -29,16 +29,17 @@ the separate video and audio streams above 360p.
   transcript is what search and agents read. The audio or video file is added when asked.
 - Captions: one track, a person's in the video's language first, else the automatic track
   in the original language. Asking for every variant gets HTTP 429 from YouTube.
-- Audio is kept as served (m4a when there is one): no conversion. Video prefers H.264
-  and AAC in MP4, which every browser plays.
+- Audio is kept as served (m4a when there is one): no conversion. Video takes the
+  highest resolution up to the cap, the resolution being the shorter side (a vertical
+  1080x1920 Short is 1080p), then prefers H.264 and AAC in MP4, which every browser plays.
 - yt-dlp runs as a child process (`python -m yt_dlp`), killed after `media.timeout_s`.
   Its network goes through a guarded proxy (ADR-0022), and stream fragments are
   downloaded by yt-dlp itself (`--downloader native`), so ffmpeg only touches local files.
 - Limits: `media.max_mb` per file (4 GB), and videos longer than
   `media.max_duration_min` (6 h) keep their transcript only. A skipped file is noted in
   `meta.media_skipped`; the fetch still succeeds.
-- A re-fetch hard-links the previous media file when the same thing is asked, instead of
-  downloading gigabytes again.
+- A re-fetch hard-links the previous media file when the same thing is asked and no
+  higher resolution is offered under the cap, instead of downloading gigabytes again.
 - Private, removed, members-only and age-restricted videos fail at once. A bot check
   ("confirm you're not a bot") is retried later. Live streams fail until they end.
 - One image: Deno and ffmpeg ship in it. Audio and video need ffmpeg (`media.downloads`

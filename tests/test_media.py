@@ -8,7 +8,14 @@ import pytest
 
 from alexandria.config import Settings
 from alexandria.fetchers.base import PermanentFetchError
-from alexandria.fetchers.media import MediaFetcher, MediaTools, _error, _pick_captions, _Plan
+from alexandria.fetchers.media import (
+    MediaFetcher,
+    MediaTools,
+    _error,
+    _pick_captions,
+    _Plan,
+    resolution,
+)
 from alexandria.jobs import Worker
 from alexandria.library import InvalidInput, Library, Update
 from alexandria.models import FetchStatus, Kind, MediaChoice, MediaLevel
@@ -228,7 +235,8 @@ class TestMediaFetch:
         assert media is not None and media.path == "media.mp4"
         assert r.meta["media_kept"] == "video" and r.meta["media_height"] == 360
         args = _runs(tmp_path)[-1]
-        assert args[args.index("-f") + 1] == "b[height<=480]/w"  # no ffmpeg: one file
+        assert args[args.index("-f") + 1] == "b"  # no ffmpeg: one file with its sound
+        assert args[args.index("-S") + 1].startswith("res:480,")
 
     async def test_a_taller_format_is_downloaded_again(
         self, media_library: Library, settings: Settings, tmp_path: Path
@@ -294,21 +302,34 @@ class TestMediaFetch:
 class TestFormatChoice:
     """yt-dlp's own selector, offline, on formats YouTube offered for a real video."""
 
-    FORMATS = [
-        # id, height, vcodec, acodec, tbr
-        ("18", 358, "avc1.42001E", "mp4a.40.2", 493),  # 360p with its sound
-        ("134", 358, "avc1.4D401E", "none", 364),
-        ("243", 358, "vp9", "none", 283),
-        ("136", 714, "avc1.64001F", "none", 1470),
-        ("247", 714, "vp9", "none", 1100),
-        ("137", 1072, "avc1.640028", "none", 2852),
-        ("248", 1072, "vp9", "none", 2200),
-        ("140", None, "none", "mp4a.40.2", 129),
-        ("251", None, "none", "opus", 121),
-        ("380", None, "none", "ac-3", 384),
+    AUDIO = [
+        ("140", None, None, "none", "mp4a.40.2", 129),
+        ("251", None, None, "none", "opus", 121),
+        ("380", None, None, "none", "ac-3", 384),
+    ]
+    FORMATS = [  # a film, landscape
+        # id, width, height, vcodec, acodec, tbr
+        ("18", 640, 358, "avc1.42001E", "mp4a.40.2", 493),  # 360p with its sound
+        ("134", 640, 358, "avc1.4D401E", "none", 364),
+        ("243", 640, 358, "vp9", "none", 283),
+        ("136", 1280, 714, "avc1.64001F", "none", 1470),
+        ("247", 1280, 714, "vp9", "none", 1100),
+        ("137", 1920, 1072, "avc1.640028", "none", 2852),
+        ("248", 1920, 1072, "vp9", "none", 2200),
+        *AUDIO,
+    ]
+    SHORT = [  # a YouTube Short, portrait: "1080p" is 1080x1920
+        ("18", 360, 640, "avc1.42001E", "mp4a.40.2", 400),
+        ("134", 360, 640, "avc1.4D401E", "none", 300),
+        ("135", 608, 1080, "avc1.4D401F", "none", 600),
+        ("136", 720, 1280, "avc1.4D401F", "none", 973),
+        ("137", 1080, 1920, "avc1.640028", "none", 2784),
+        *AUDIO,
     ]
 
-    def chosen(self, settings: Settings, height: int, ffmpeg: bool = True) -> str:
+    def chosen(
+        self, settings: Settings, height: int, ffmpeg: bool = True, offered: list | None = None
+    ) -> str:
         from yt_dlp import YoutubeDL
 
         tools = MediaTools("/usr/bin/ffmpeg" if ffmpeg else None, None)
@@ -318,9 +339,9 @@ class TestFormatChoice:
             params["format_sort"] = args[args.index("-S") + 1].split(",")
         formats = [
             {"format_id": i, "url": f"https://example.invalid/{i}", "height": h,
-             "width": h and h * 16 // 9, "vcodec": v, "acodec": a, "tbr": t,
+             "width": w, "vcodec": v, "acodec": a, "tbr": t,
              "ext": "webm" if v == "vp9" or a == "opus" else "mp4" if h else "m4a"}
-            for i, h, v, a, t in self.FORMATS
+            for i, w, h, v, a, t in offered or self.FORMATS
         ]  # fmt: skip
         info = {"id": "x", "title": "x", "extractor": "youtube", "extractor_key": "Youtube",
                 "webpage_url": "https://www.youtube.com/watch?v=x", "formats": formats}  # fmt: skip
@@ -340,3 +361,19 @@ class TestFormatChoice:
 
     def test_without_ffmpeg_one_file_with_sound(self, settings: Settings) -> None:
         assert self.chosen(settings, 1080, ffmpeg=False) == "18"
+
+    @pytest.mark.parametrize(("cap", "expected"), [(1080, "137+140"), (720, "136+140"),
+                                                    (480, "18"), (2160, "137+140")])  # fmt: skip
+    def test_vertical_videos_capped_on_their_shorter_side(
+        self, settings: Settings, cap: int, expected: str
+    ) -> None:
+        # 608x1080 is only "608p": a 1080p cap gets the 1080x1920 file.
+        assert self.chosen(settings, cap, offered=self.SHORT) == expected
+
+    def test_above_the_cap_only_the_smallest_is_taken(self, settings: Settings) -> None:
+        tall_only = [f for f in self.FORMATS if f[0] in ("136", "137", "140")]
+        assert self.chosen(settings, 480, offered=tall_only) == "136+140"
+
+    def test_resolution(self) -> None:
+        assert resolution(1080, 1920) == resolution(1920, 1080) == 1080
+        assert resolution(None, 720) == 720 and resolution(None, None) is None

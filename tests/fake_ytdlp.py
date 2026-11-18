@@ -68,8 +68,20 @@ def main() -> int:
         data = info(url)
         if "tall" in url:  # a 720p file exists, but this fake always saves 360p
             data["formats"] = [
-                {"format_id": "18", "height": 360, "vcodec": "avc1", "acodec": "mp4a"},
-                {"format_id": "22", "height": 720, "vcodec": "avc1", "acodec": "mp4a"},
+                {
+                    "format_id": "18",
+                    "width": 640,
+                    "height": 360,
+                    "vcodec": "avc1",
+                    "acodec": "mp4a",
+                },
+                {
+                    "format_id": "22",
+                    "width": 1280,
+                    "height": 720,
+                    "vcodec": "avc1",
+                    "acodec": "mp4a",
+                },
             ]
         if "live" in url:
             data["live_status"] = "is_live"
@@ -86,7 +98,7 @@ def main() -> int:
         Path(name).write_bytes(b"\x00" * 2048)
         Path("media.f137.mp4.part").write_bytes(b"\x00")  # a leftover stream
         if "--print-to-file" in args:
-            Path(args[args.index("--print-to-file") + 2]).write_text("" if audio else "360\n")
+            Path(args[args.index("--print-to-file") + 2]).write_text("" if audio else "640 360\n")
     return 0
 
 

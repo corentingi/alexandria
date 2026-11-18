@@ -168,7 +168,7 @@ class MediaFetcher:
                 args += self._format_args(plan)
                 args += [
                     "--max-filesize", f"{self.settings.media.max_mb}M",
-                    "--print-to-file", "after_move:%(height|)s", "media-height.txt",
+                    "--print-to-file", "after_move:%(width|)s %(height|)s", "media-size.txt",
                 ]  # fmt: skip
             output = "\n".join(await self._run(args, proxy, staging_dir))
         full_info.unlink(missing_ok=True)
@@ -206,25 +206,30 @@ class MediaFetcher:
     def _format_args(self, plan: _Plan) -> list[str]:
         """The highest resolution under the cap, then formats browsers play (H.264 and AAC
         first); separate video and audio streams are merged with ffmpeg into an MP4, from
-        local files only. ``res`` must come first: otherwise a 360p file that has its own
-        AAC sound outranks a 1080p video-only stream on ``acodec``."""
+        local files only.
+
+        The cap is on the resolution, the frame's shorter side ("1080p" is 1920x1080 and,
+        for a vertical video, 1080x1920): yt-dlp's ``res``. ``res:N`` prefers the largest
+        at most N, else the smallest above. It must come first: otherwise a 360p file that
+        has its own AAC sound outranks a 1080p video-only stream on ``acodec``.
+        """
         if plan.keep == MediaLevel.AUDIO:  # kept as served: no conversion, no ffmpeg
             return ["-f", "bestaudio[ext=m4a]/bestaudio"]
-        h = plan.height
+        sort = ["-S", f"res:{plan.height},vcodec:h264,acodec:m4a,ext:mp4:m4a"]
         if self.tools.ffmpeg:
             return [
-                "-f", f"bv*[height<={h}]+ba/b[height<={h}]/wv*+ba/w",
-                "-S", "res,vcodec:h264,acodec:m4a,ext:mp4:m4a",
+                "-f", "bv*+ba/b", *sort,
                 "--merge-output-format", "mp4", "--ffmpeg-location", self.tools.ffmpeg,
             ]  # fmt: skip
-        return ["-f", f"b[height<={h}]/w"]  # one file with sound: nothing to merge
+        return ["-f", "b", *sort]  # one file with sound: nothing to merge
 
     def _reuse(
         self, resource: Resource, plan: _Plan, staging: Path, info: dict[str, Any]
     ) -> Artifact | None:
         """Hard-link the previous snapshot's media file when it is what is asked again, and
-        no taller video is offered under the cap (a file saved by a worse format choice, or
-        a video re-published in a higher resolution, is downloaded again)."""
+        no higher resolution is offered under the cap (a file saved by a worse format
+        choice, or a video re-published in a higher resolution, is downloaded again). A
+        file recorded before resolutions were (no ``resolution``) is downloaded again."""
         previous = resource.artifact("media")
         if previous is None or resource.current_snapshot is None:
             return None
@@ -234,8 +239,8 @@ class MediaFetcher:
         if plan.keep == MediaLevel.VIDEO:
             if extra.get("max_height") != plan.height:
                 return None
-            best = self._best_height(info, plan.height)
-            if best and (extra.get("height") or 0) < best:
+            best = self._best_resolution(info, plan.height)
+            if best and (extra.get("resolution") or 0) < best:
                 return None
         try:
             source = self.files.snapshot_dir(resource.id, resource.current_snapshot)
@@ -245,19 +250,19 @@ class MediaFetcher:
             return None
         return previous
 
-    def _best_height(self, info: dict[str, Any], cap: int) -> int | None:
-        """The tallest video under the cap that ``_format_args`` can get (formats with
-        their own sound only, without ffmpeg)."""
-        heights = [
-            int(f["height"])
+    def _best_resolution(self, info: dict[str, Any], cap: int) -> int | None:
+        """The highest resolution under the cap that ``_format_args`` can get (formats
+        with their own sound only, without ffmpeg)."""
+        found = [
+            r
             for f in info.get("formats") or []
             if isinstance(f, dict)
-            and isinstance(f.get("height"), int)
-            and f["height"] <= cap
             and f.get("vcodec") not in (None, "none")
             and (self.tools.ffmpeg or f.get("acodec") not in (None, "none"))
+            and (r := resolution(f.get("width"), f.get("height"))) is not None
+            and r <= cap
         ]
-        return max(heights, default=None)
+        return max(found, default=None)
 
     def _base_args(self, proxy: GuardedProxy) -> list[str]:
         args = [
@@ -353,13 +358,13 @@ class MediaFetcher:
 
         media = next((p for p in sorted(staging.glob("media.*")) if _finished(p)), None)
         if plan.keep != MediaLevel.TRANSCRIPT and media is not None:
-            height = _height(staging, reused) if plan.keep == MediaLevel.VIDEO else None
+            res = _resolution(staging, reused) if plan.keep == MediaLevel.VIDEO else None
             extra: dict[str, Any] = {"keep": plan.keep.value}
             if plan.keep == MediaLevel.VIDEO:
-                extra.update(max_height=plan.height, height=height)
+                extra.update(max_height=plan.height, resolution=res)
             artifacts.append(describe_file(media, "media", **extra))
             meta["media_kept"] = plan.keep.value
-            meta["media_height"] = height
+            meta["media_height"] = res
         elif plan.keep != MediaLevel.TRANSCRIPT:
             plan.skipped = (
                 f"larger than {self.settings.media.max_mb} MB"
@@ -367,7 +372,7 @@ class MediaFetcher:
                 else "no file could be downloaded"
             )
         meta["media_skipped"] = plan.skipped
-        for leftover in staging.iterdir():  # partial downloads, the height file
+        for leftover in staging.iterdir():  # partial downloads, the size file
             if leftover.is_file() and leftover.name not in {a.path for a in artifacts}:
                 leftover.unlink()
         return SnapshotResult(
@@ -428,15 +433,22 @@ def _finished(path: Path) -> bool:
     return not name.endswith((".part", ".ytdl", ".temp")) and not _INTERMEDIATE.match(name)
 
 
-def _height(staging: Path, reused: Artifact | None) -> int | None:
+def resolution(width: object, height: object) -> int | None:
+    """A video's "p" number: its shorter side (a vertical 1080x1920 video is 1080p)."""
+    sides = [s for s in (width, height) if isinstance(s, int) and s > 0]
+    return min(sides) if sides else None
+
+
+def _resolution(staging: Path, reused: Artifact | None) -> int | None:
     if reused is not None:
-        height = (reused.model_extra or {}).get("height")
-        return height if isinstance(height, int) else None
+        value = (reused.model_extra or {}).get("resolution")
+        return value if isinstance(value, int) else None
     try:
-        text = (staging / "media-height.txt").read_text().split()
-        return int(text[-1]) if text else None
-    except OSError, ValueError:
+        lines = (staging / "media-size.txt").read_text().splitlines()
+        sizes = [int(s) if s.isdigit() else None for s in lines[-1].split()] if lines else []
+    except OSError:
         return None
+    return resolution(*sizes) if len(sizes) == 2 else None
 
 
 def _error(stderr: str) -> FetchError:

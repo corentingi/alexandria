@@ -236,7 +236,7 @@ class MediaMeta(BaseModel):
     language: str | None = None
     captions: str | None = None  # manual | automatic | none
     media_kept: str | None = None  # audio | video, when a file was saved
-    media_height: int | None = None
+    media_height: int | None = None  # the resolution: shorter side (1080 for 1080x1920)
     media_skipped: str | None = None  # why the file asked for was not saved
 
 

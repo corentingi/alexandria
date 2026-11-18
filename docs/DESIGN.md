@@ -309,14 +309,15 @@ immediately.
    fail with a clear message.
 2. One captions track (a person's in the video's language, else the original automatic
    track), the thumbnail and, if `media.keep` asks for it, the audio (as served, m4a
-   first) or the video (MP4, H.264 first, at most `max_height`). Fragments are
+   first) or the video (MP4, the highest resolution up to `max_height`, then H.264). The
+   resolution is the shorter side: a vertical 1080x1920 video is 1080p. Fragments are
    downloaded by yt-dlp itself; ffmpeg only merges local files.
 3. Snapshot: `content.md` (description, then the transcript in paragraphs of about a
    minute under the chapters, each with its timestamp), `info.json` (without stream
    URLs), `captions.<lang>.vtt`, `thumbnail.*`, `media.*`.
 4. Over `media.max_mb` or `media.max_duration_min`: the transcript is kept and
    `meta.media_skipped` says why. A re-fetch hard-links the previous media file when the
-   same thing is asked.
+   same thing is asked and no higher resolution is offered under the cap.
 
 ### 8.5 Attachments
 - Upload: multipart via the API or UI. Filename is sanitized: basename only, a
