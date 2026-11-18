@@ -151,8 +151,9 @@ class TestCliReview:
 
     def test_empty_filters_never_mean_everything(self, cli: CliRunner) -> None:
         ok(cli, "note", "A note")
-        for args in (["--tag", ""], ["--tag", "  "], ["--project", ""]):
-            assert "empty --tag or --project" in refused(cli, "refetch", *args, "--yes")
+        for args in (["--tag", ""], ["--tag", "  "], ["--project", ""], ["--site", " "]):
+            assert "empty --tag, --project or --site" in refused(cli, "refetch", *args, "--yes")
+            assert "empty" in refused(cli, "snapshot", "prune", *args, "--yes")
 
     def test_confirmation(self, cli: CliRunner, settings: Settings) -> None:
         ok(cli, "add", VIDEO)
@@ -197,3 +198,25 @@ class TestCliReview:
         slug = json.loads(ok(cli, "lookup", PRIVATE_VIDEO, "--json"))["slug"]
         ok(cli, "refetch", slug)  # a new fetch is pending
         assert "already queued" in refused(cli, "jobs", "retry", job_id)
+
+
+class TestSnapshotPrune:
+    def test_prune_one_and_by_site(self, cli: CliRunner, settings: Settings) -> None:
+        ok(cli, "add", VIDEO)
+        ok(cli, "add", "https://vimeo.com/123456")
+        drain(settings)
+        for _ in range(2):
+            ok(cli, "refetch", "--all", "--yes")
+            drain(settings)
+        assert len(ok(cli, "snapshot", "list", "me-at-the-zoo").splitlines()) == 3
+        assert [
+            r["slug"] for r in json.loads(ok(cli, "list", "--site", "youtube.com", "--json"))
+        ] == ["me-at-the-zoo"]
+        result = cli.invoke(app, ["snapshot", "prune", "--site", "youtube.com"], input="y\n")
+        assert result.exit_code == 0 and "Deleted 2 snapshot(s)" in result.output
+        lines = ok(cli, "snapshot", "list", "me-at-the-zoo").splitlines()
+        assert len(lines) == 1 and lines[0].endswith("(current)")
+        vimeo = json.loads(ok(cli, "lookup", "https://vimeo.com/123456", "--json"))["slug"]
+        assert len(ok(cli, "snapshot", "list", vimeo).splitlines()) == 3  # other site kept
+        assert "Deleted 2 snapshot(s)" in ok(cli, "snapshot", "prune", vimeo, "--yes")
+        assert "No old snapshots." in ok(cli, "snapshot", "prune", "--all", "--yes")

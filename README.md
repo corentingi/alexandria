@@ -63,8 +63,8 @@ has a bookmarklet.
 Every common action is also a command, for scripts or a shell in the container
 (`docker compose exec alexandria alexandria --help`): `add`, `upload`, `import`, `note`,
 `list`, `search`, `show`, `content`, `edit`, `refetch` (one resource, or every one matching
-filters, e.g. `refetch --kind media`), `delete`, `jobs list|show|retry`, `attachment`,
-`snapshot`, `stats`, `token`, `library export|import`, `backup`, `reindex`. Read commands
+filters, e.g. `refetch --site youtube.com`), `delete`, `jobs list|show|retry`, `attachment`,
+`snapshot list|delete|prune` (prune keeps only the current snapshot), `stats`, `token`, `library export|import`, `backup`, `reindex`. Read commands
 take `--json`.
 
 ## Restore a repository archive

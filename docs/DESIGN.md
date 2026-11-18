@@ -427,15 +427,15 @@ commands take `--json` (the REST API's shape). Refs are ids or slugs. Resource l
 alexandria serve | version | stats
 alexandria add <url> [--why] [--tag]… [--project] [--title] [--keep] [--max-height] [--video] [--now]
 alexandria upload <files>… | import <file> | note <title> [--body-file f|-]
-alexandria list [--kind] [--status] [--tag] [--project] [--fetch-status] [--limit]
+alexandria list [--kind] [--status] [--tag] [--project] [--fetch-status] [--site] [--limit]
 alexandria search <query> [filters] | lookup <url> | tags | projects
 alexandria show <ref> | content <ref> [--chunk n]
 alexandria edit <ref> [--title] [--why] [--notes|--notes-file] [--tag]… [--untag]…
                       [--project] [--status] [--keep] [--max-height]
-alexandria refetch <ref>… | refetch [--kind] [--status] [--tag] [--project] [--fetch-status] [--all] [--yes]
+alexandria refetch <ref>… | refetch [--kind] [--status] [--tag] [--project] [--fetch-status] [--site] [--all] [--yes]
 alexandria delete <ref> [--yes]
 alexandria attachment add <ref> <file|url> | delete <ref> <path> | extract <ref> <path>
-alexandria snapshot list <ref> | delete <ref> <id>
+alexandria snapshot list <ref> | delete <ref> <id> | prune <ref>… | prune [filters] [--site] [--all]
 alexandria jobs list [--status] | show <id> | retry <id> | retry --failed
 alexandria reindex [ref] | backup <dest-dir>
 alexandria token create <name> --scope read|write|admin | list | scope <name> <s> | revoke <name>

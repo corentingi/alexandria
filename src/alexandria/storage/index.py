@@ -150,6 +150,7 @@ class SearchFilters:
     captured_after: str | None = None
     captured_before: str | None = None
     fetch_status: str | None = None
+    site: str | None = None  # "youtube.com": links on this host or its subdomains
 
 
 @dataclass
@@ -739,6 +740,10 @@ def _filter_sql(f: SearchFilters) -> tuple[str, list[Any]]:
     if f.fetch_status:
         clauses.append("r.fetch_status = ?")
         params.append(f.fetch_status)
+    if f.site:
+        site = f.site.lower().removeprefix("www.").replace("%", "").replace("_", "")
+        clauses.append("(r.canonical_url LIKE ? OR r.canonical_url LIKE ?)")
+        params += [f"%://{site}/%", f"%.{site}/%"]
     if f.captured_after:
         clauses.append("r.captured_at >= ?")
         params.append(f.captured_after)

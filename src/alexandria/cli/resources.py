@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import mimetypes
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from pathlib import Path
 from typing import Annotated
 
@@ -45,6 +46,11 @@ StatusOpt = Annotated[
 FetchOpt = Annotated[
     FetchStatus | None, typer.Option("--fetch-status", help="Only this fetch status")
 ]
+SiteOpt = Annotated[
+    str | None, typer.Option("--site", help="Only links on this site, e.g. youtube.com")
+]
+EveryOpt = Annotated[bool, typer.Option("--all", help="Every resource (archived aside)")]
+Refs = Annotated[list[str] | None, typer.Argument(help="Ids or slugs")]
 
 
 def _filters(
@@ -53,6 +59,7 @@ def _filters(
     tags: list[str] | None = None,
     project: str | None = None,
     fetch_status: FetchStatus | None = None,
+    site: str | None = None,
 ) -> SearchFilters:
     return SearchFilters(
         kind=kind.value if kind else None,
@@ -60,7 +67,35 @@ def _filters(
         tags=tags or [],
         project=project,
         fetch_status=fetch_status.value if fetch_status else None,
+        site=site,
     )
+
+
+def _targets(
+    library: Library,
+    refs: list[str] | None,
+    every: bool,
+    filters: SearchFilters,
+) -> list[str]:
+    """The resources a bulk command acts on: the ones named, or every one matching the
+    filters (notes aside: they have no source). Refuses an empty filter value, which an
+    unset shell variable gives, so that "these" never silently becomes "everything"."""
+    blank = [v for v in (filters.project, filters.site) if v is not None and not v.strip()]
+    if blank or any(not t.strip() for t in filters.tags):
+        fail("empty --tag, --project or --site: give a value, or leave the option out")
+    filtered = bool(filters.tags) or any(
+        v is not None
+        for v in (filters.kind, filters.status, filters.project, filters.fetch_status,
+                  filters.site)
+    )  # fmt: skip
+    if refs and (filtered or every):
+        fail("name resources, or use filters / --all, not both")
+    if not refs and not (filtered or every):
+        fail("name resources, or select them with filters (see --help) or --all")
+    if refs:
+        return list(refs)
+    notes = set(library.select(replace(filters, kind=Kind.NOTE.value)))
+    return [t for t in library.select(filters) if t not in notes]
 
 
 def _media(library: Library, keep: str | None, max_height: int | None) -> MediaChoice | None:
@@ -242,12 +277,13 @@ def list_(
     tag: Tags = None,
     project: Project = None,
     fetch_status: FetchOpt = None,
+    site: SiteOpt = None,
     limit: Limit = 20,
     as_json: Json = False,
 ) -> None:
     """The most recently saved resources, newest first."""
     library = open_library()
-    hits = library.search("", _filters(kind, status, tag, project, fetch_status), limit)
+    hits = library.search("", _filters(kind, status, tag, project, fetch_status, site), limit)
     rows = [search_result(h, r) for h, r in hits]
     if as_json:
         print_json(rows)
@@ -435,36 +471,26 @@ def edit(
 @app.command()
 @handled
 def refetch(
-    refs: Annotated[list[str] | None, typer.Argument(help="Ids or slugs")] = None,
+    refs: Refs = None,
     kind: KindOpt = None,
     status: StatusOpt = None,
     tag: Tags = None,
     project: Project = None,
     fetch_status: FetchOpt = None,
-    every: Annotated[bool, typer.Option("--all", help="Every resource (archived aside)")] = False,
+    site: SiteOpt = None,
+    every: EveryOpt = False,
     yes: Yes = False,
 ) -> None:
     """Fetch resources again: the ones named, or every one matching filters.
 
-    Examples: refetch my-article; refetch --kind media; refetch --fetch-status failed.
+    Examples: refetch my-article; refetch --site youtube.com; refetch --fetch-status failed.
     Archived resources are left out unless --status archived. A video's file is
     downloaded again only when its options changed or a taller format is offered.
     """
     library = open_library()
-    # An empty value (an unset shell variable) must not widen the selection to everything.
-    if (tag and len(_clean(tag)) != len(tag)) or (project is not None and not project.strip()):
-        fail("empty --tag or --project: give a value, or leave the option out")
-    filtered = any(x is not None for x in (kind, status, project, fetch_status)) or bool(tag)
-    if refs and (filtered or every):
-        fail("name resources, or use filters / --all, not both")
-    if not refs and not (filtered or every):
-        fail("name resources, or select them with filters (see --help) or --all")
-    if refs:
-        targets = list(refs)
-    else:
-        targets = library.select(_filters(kind, status, tag, project, fetch_status))
-        notes = set(library.select(_filters(Kind.NOTE, status, tag, project, fetch_status)))
-        targets = [t for t in targets if t not in notes]  # nothing to fetch
+    filters = _filters(kind, status, tag, project, fetch_status, site)
+    targets = _targets(library, refs, every, filters)
+    if not refs:
         if not targets:
             typer.echo("No resource matches.")
             return
@@ -547,6 +573,38 @@ def snapshot_list(ref: str) -> None:
         size = sum(a.size for a in snap.artifacts) / 1e6
         mark = "  (current)" if snap.id == r.current_snapshot else ""
         typer.echo(f"{snap.id}  {size:>9.1f} MB  {len(snap.artifacts)} file(s){mark}")
+
+
+@snapshot_app.command("prune")
+@handled
+def snapshot_prune(
+    refs: Refs = None,
+    kind: KindOpt = None,
+    status: StatusOpt = None,
+    tag: Tags = None,
+    project: Project = None,
+    site: SiteOpt = None,
+    every: EveryOpt = False,
+    yes: Yes = False,
+) -> None:
+    """Delete every snapshot but the current one: of the resources named, or of every one
+    matching filters (e.g. --site youtube.com)."""
+    library = open_library()
+    targets = _targets(library, refs, every, _filters(kind, status, tag, project, None, site))
+    old = {t: len(r.snapshots) - 1 for t in targets if (r := library.get(t)).snapshots}
+    old = {t: n for t, n in old.items() if n > 0}
+    if not old:
+        typer.echo("No old snapshots.")
+        return
+    if not yes:
+        typer.confirm(
+            f"Delete {sum(old.values())} old snapshot(s) of {len(old)} resource(s)?", abort=True
+        )
+    count = size = 0
+    for ref in old:
+        n, freed = run(library.prune_snapshots(ref))
+        count, size = count + n, size + freed
+    typer.echo(f"Deleted {count} snapshot(s), {size / 1e6:.1f} MB freed.")
 
 
 @snapshot_app.command("delete")

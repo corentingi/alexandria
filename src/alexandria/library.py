@@ -808,6 +808,18 @@ class Library:
             self.index.upsert(resource, chunks, role or "")
         return resource
 
+    async def prune_snapshots(self, ref: str) -> tuple[int, int]:
+        """Delete every snapshot but the current one. Returns (snapshots, bytes) freed."""
+        resource = self.get(ref)
+        count = size = 0
+        for snapshot in resource.snapshots:
+            if snapshot.id == resource.current_snapshot:
+                continue
+            await self.delete_snapshot(resource.id, snapshot.id)
+            count += 1
+            size += sum(a.size for a in snapshot.artifacts)
+        return count, size
+
     async def delete_attachment(self, ref: str, path: str) -> None:
         """Remove one attachment: its file and its entry in ``resource.md``."""
         resource_id = self.resolve(ref)
