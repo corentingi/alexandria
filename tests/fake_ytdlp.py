@@ -2,7 +2,8 @@
 
 Usage: ``fake_ytdlp.py <log_dir> <yt-dlp args...>``. Each run appends its arguments to
 ``<log_dir>/runs.jsonl``. The URL picks the behaviour: "playlist", "live", "private" and
-"bot" in it give those answers; anything else is a short video with captions.
+"bot" in it give those answers; "tall" offers a 720p format; anything else is a short
+video with captions.
 """
 
 from __future__ import annotations
@@ -65,6 +66,11 @@ def main() -> int:
             print(json.dumps({"_type": "playlist", "id": "PL1", "entries": []}))
             return 0
         data = info(url)
+        if "tall" in url:  # a 720p file exists, but this fake always saves 360p
+            data["formats"] = [
+                {"format_id": "18", "height": 360, "vcodec": "avc1", "acodec": "mp4a"},
+                {"format_id": "22", "height": 720, "vcodec": "avc1", "acodec": "mp4a"},
+            ]
         if "live" in url:
             data["live_status"] = "is_live"
         print(json.dumps(data))

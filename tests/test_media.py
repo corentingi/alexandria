@@ -230,6 +230,23 @@ class TestMediaFetch:
         args = _runs(tmp_path)[-1]
         assert args[args.index("-f") + 1] == "b[height<=480]/w"  # no ffmpeg: one file
 
+    async def test_a_taller_format_is_downloaded_again(
+        self, media_library: Library, settings: Settings, tmp_path: Path
+    ) -> None:
+        settings.media.downloads = True
+        choice = MediaChoice(keep=MediaLevel.VIDEO, max_height=1080)
+        result = await media_library.ingest(VIDEO, media=choice)
+        tall = await media_library.ingest(
+            "https://www.youtube.com/watch?v=tallvideo01", media=choice
+        )
+        await Worker(media_library).drain()
+        for res in (result, tall):
+            await media_library.refetch(res.resource.id)
+        await Worker(media_library).drain()
+        refetches = [a for a in _runs(tmp_path) if "--load-info-json" in a][-2:]
+        # Same choice, nothing taller offered: reused. A 720p format for a 360p file: again.
+        assert ["--skip-download" in a for a in refetches] == [True, False]
+
     async def test_changing_the_choice(self, media_library: Library, settings: Settings) -> None:
         result = await media_library.ingest(VIDEO)
         with pytest.raises(InvalidInput):

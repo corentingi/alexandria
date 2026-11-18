@@ -151,7 +151,7 @@ class MediaFetcher:
             captions_lang, automatic = _pick_captions(info)
             reused = None
             if plan.keep != MediaLevel.TRANSCRIPT:
-                reused = self._reuse(resource, plan, staging_dir)
+                reused = self._reuse(resource, plan, staging_dir, info)
             args = [
                 "--load-info-json", str(full_info), "--write-thumbnail",
                 "-o", "media.%(ext)s", "-o", "subtitle:captions.%(ext)s",
@@ -219,16 +219,24 @@ class MediaFetcher:
             ]  # fmt: skip
         return ["-f", f"b[height<={h}]/w"]  # one file with sound: nothing to merge
 
-    def _reuse(self, resource: Resource, plan: _Plan, staging: Path) -> Artifact | None:
-        """Hard-link the previous snapshot's media file when it is what is asked again."""
+    def _reuse(
+        self, resource: Resource, plan: _Plan, staging: Path, info: dict[str, Any]
+    ) -> Artifact | None:
+        """Hard-link the previous snapshot's media file when it is what is asked again, and
+        no taller video is offered under the cap (a file saved by a worse format choice, or
+        a video re-published in a higher resolution, is downloaded again)."""
         previous = resource.artifact("media")
         if previous is None or resource.current_snapshot is None:
             return None
         extra = previous.model_extra or {}
         if extra.get("keep") != plan.keep.value:
             return None
-        if plan.keep == MediaLevel.VIDEO and extra.get("max_height") != plan.height:
-            return None
+        if plan.keep == MediaLevel.VIDEO:
+            if extra.get("max_height") != plan.height:
+                return None
+            best = self._best_height(info, plan.height)
+            if best and (extra.get("height") or 0) < best:
+                return None
         try:
             source = self.files.snapshot_dir(resource.id, resource.current_snapshot)
             os.link(source / previous.path, staging / previous.path)
@@ -236,6 +244,20 @@ class MediaFetcher:
             log.info("cannot reuse the media file of %s: %s", resource.id, exc)
             return None
         return previous
+
+    def _best_height(self, info: dict[str, Any], cap: int) -> int | None:
+        """The tallest video under the cap that ``_format_args`` can get (formats with
+        their own sound only, without ffmpeg)."""
+        heights = [
+            int(f["height"])
+            for f in info.get("formats") or []
+            if isinstance(f, dict)
+            and isinstance(f.get("height"), int)
+            and f["height"] <= cap
+            and f.get("vcodec") not in (None, "none")
+            and (self.tools.ffmpeg or f.get("acodec") not in (None, "none"))
+        ]
+        return max(heights, default=None)
 
     def _base_args(self, proxy: GuardedProxy) -> list[str]:
         args = [
