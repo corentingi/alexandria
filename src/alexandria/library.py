@@ -809,15 +809,20 @@ class Library:
         return resource
 
     async def prune_snapshots(self, ref: str) -> tuple[int, int]:
-        """Delete every snapshot but the current one. Returns (snapshots, bytes) freed."""
+        """Delete every snapshot but the current one. Returns (snapshots, bytes) freed.
+
+        A file hard-linked into another snapshot (a reused video) frees nothing until its
+        last link goes, so it counts only then.
+        """
         resource = self.get(ref)
         count = size = 0
         for snapshot in resource.snapshots:
             if snapshot.id == resource.current_snapshot:
                 continue
+            folder = self.files.snapshot_dir(resource.id, snapshot.id)
+            size += sum(_freed_by_unlink(folder / a.path) for a in snapshot.artifacts)
             await self.delete_snapshot(resource.id, snapshot.id)
             count += 1
-            size += sum(a.size for a in snapshot.artifacts)
         return count, size
 
     async def delete_attachment(self, ref: str, path: str) -> None:
@@ -1479,6 +1484,15 @@ def _scope(scope: Scope | None, project: str | None) -> tuple[Scope, str | None]
 
 
 _URL_IN_TEXT = re.compile(r"https?://[^\s<>\"']+")
+
+
+def _freed_by_unlink(path: Path) -> int:
+    """The bytes unlinking ``path`` gives back: its size if this is its last link."""
+    try:
+        stat = path.stat()
+    except OSError:
+        return 0
+    return stat.st_size if stat.st_nlink == 1 else 0
 
 
 def _capped_entries(text: str, report: ImportReport) -> list[tuple[str, list[str], str | None]]:

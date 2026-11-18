@@ -400,3 +400,24 @@ class TestOneDownloadPerSite:
         index.finish_job(first.id)
         after = index.claim_job()
         assert after is not None and after.resource_id == b.resource.id
+
+
+class TestPrune:
+    async def test_a_shared_file_frees_nothing(
+        self, media_library: Library, settings: Settings
+    ) -> None:
+        settings.media.downloads = True
+        result = await media_library.ingest(VIDEO, media=MediaChoice(keep=MediaLevel.AUDIO))
+        await Worker(media_library).drain()
+        await media_library.refetch(result.resource.id)
+        await Worker(media_library).drain()  # the audio file is hard-linked, not downloaded
+        r = media_library.get(result.resource.id)
+        old = r.snapshots[0]
+        not_shared = sum(a.size for a in old.artifacts if a.role != "media")
+        assert await media_library.prune_snapshots(r.id) == (1, not_shared)
+        r = media_library.get(r.id)
+        assert [s.id for s in r.snapshots] == [r.current_snapshot]
+        media = r.artifact("media")
+        assert media is not None
+        path = media_library.files.snapshot_dir(r.id, r.current_snapshot or "") / media.path
+        assert path.stat().st_nlink == 1  # still there, now its only link
