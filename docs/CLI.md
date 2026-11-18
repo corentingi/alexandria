@@ -130,7 +130,7 @@ alexandria jobs retry --failed           # every failed job
 ## Administration
 
 ```sh
-alexandria version                       # 0.1.0, or 0.1.0-21-g9486730 between releases
+alexandria version                       # 0.2.0, or 0.2.0-3-g1a2b3c4 between releases
 alexandria token create claude --scope write    # prints the secret once
 alexandria token list
 alexandria token scope claude read

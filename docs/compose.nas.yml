@@ -6,7 +6,7 @@
 #   3. Read the first admin token: docker compose logs | grep -A2 "shown once"
 services:
   alexandria:
-    image: ghcr.io/corentingi/alexandria:latest   # or pin a version, e.g. :0.1.0
+    image: ghcr.io/corentingi/alexandria:latest   # or pin a version, e.g. :0.2.0
     container_name: alexandria
     ports: ["8080:8080"]
     # Local disks only (no NFS/SMB mount): SQLite needs working file locks.
