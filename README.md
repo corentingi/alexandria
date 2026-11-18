@@ -57,8 +57,15 @@ Tools: `search`, `get_resource`, `get_content`, `list_recent`, `list_tags`,
 `untrusted_content`.
 
 REST API at `/api/v1` (docs at `/api/docs`), including `POST /documents` (multipart) and
-`POST /import` (queued as a job: follow it with `GET /jobs/{id}`). The UI's Settings page has a bookmarklet. CLI: `alexandria add <url>`,
-`alexandria upload <files…>`, `alexandria import <bookmarks.html>`, `alexandria note`.
+`POST /import` (queued as a job: follow it with `GET /jobs/{id}`). The UI's Settings page
+has a bookmarklet.
+
+Every common action is also a command, for scripts or a shell in the container
+(`docker compose exec alexandria alexandria --help`): `add`, `upload`, `import`, `note`,
+`list`, `search`, `show`, `content`, `edit`, `refetch` (one resource, or every one matching
+filters, e.g. `refetch --kind media`), `delete`, `jobs list|show|retry`, `attachment`,
+`snapshot`, `stats`, `token`, `library export|import`, `backup`, `reindex`. Read commands
+take `--json`.
 
 ## Restore a repository archive
 

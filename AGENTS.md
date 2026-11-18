@@ -15,6 +15,10 @@ and `docs/adrs/` before reversing a decision (`grep -l -i '<topic>' docs/adrs/*.
 
 - **Every data change goes through `library.Library`.** Interfaces (REST, MCP, UI, CLI)
   never touch `FileStore` or `Index` for writes.
+- **A feature ships with its CLI command.** Whatever a user can do in the UI, REST or MCP,
+  they can do with `alexandria …` in a shell inside the container (`src/alexandria/cli/`,
+  tested in `tests/test_cli.py`). Put the logic in `Library` so every interface shares it;
+  read commands take `--json`.
 - **File first, index second.** Write `resource.md` atomically, then upsert the index.
   Anything that cannot be rebuilt from files must not live only in the database.
 - **Human fields are never overwritten by machines**: `why`, `notes`, `tags`, a `human`

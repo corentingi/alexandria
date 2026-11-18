@@ -72,5 +72,5 @@ See DESIGN.md §5. Additions: `tokens.yaml` (ADR-0003), `session_secret`, and th
 | `walls.py` | Known login/bot/paywall sites and bot-check detection |
 | `transfer.py` | Export parts (tar writer, size split) and safe unpacking for import |
 | `auth.py` | Token store and scopes |
-| `api/`, `mcp_server.py`, `ui/`, `cli.py` | Interfaces |
+| `api/`, `mcp_server.py`, `ui/`, `cli/` | Interfaces (`cli/resources.py`: resource commands; `cli/admin.py`: server, jobs, tokens, transfers) |
 | `app.py` | ASGI composition, bootstrap token |

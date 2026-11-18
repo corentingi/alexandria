@@ -417,15 +417,26 @@ GET    /healthz                      (no auth)
   scopes apply.
 
 ### 10.4 CLI (Typer)
+Every common action, so a shell in the container can do what the UI does. Commands open
+the data directory through `Library`; the server's worker runs the jobs they queue. Read
+commands take `--json` (the REST API's shape). Refs are ids or slugs.
 ```
-alexandria serve
-alexandria add <url> [--why ...] [--tag ...] [--project ...]
-alexandria note <title> [--body-file ...]
-alexandria search <query>
-alexandria reindex [ref]
-alexandria backup <dest-dir>
-alexandria token create <name> --scope read|write|admin   # prints token once, stores hash
-alexandria token list | revoke <name>
+alexandria serve | version | stats
+alexandria add <url> [--why] [--tag]… [--project] [--keep] [--max-height] [--video] [--now]
+alexandria upload <files>… | import <file> | note <title> [--body-file f|-]
+alexandria list [--kind] [--status] [--tag] [--project] [--fetch-status] [--limit]
+alexandria search <query> [filters] | lookup <url> | tags | projects
+alexandria show <ref> | content <ref> [--chunk n]
+alexandria edit <ref> [--title] [--why] [--notes|--notes-file] [--tag]… [--untag]…
+                      [--project] [--status] [--keep] [--max-height]
+alexandria refetch <ref>… | refetch [--kind] [--status] [--tag] [--project] [--fetch-status] [--all] [--yes]
+alexandria delete <ref> [--yes]
+alexandria attachment add <ref> <file|url> | delete <ref> <path> | extract <ref> <path>
+alexandria snapshot list <ref> | delete <ref> <id>
+alexandria jobs list [--status] | show <id> | retry <id> | retry --failed
+alexandria reindex [ref] | backup <dest-dir>
+alexandria token create <name> --scope read|write|admin | list | scope <name> <s> | revoke <name>
+alexandria library export [--out] | exports | delete-export <id> | import <parts>…
 ```
 
 ## 11. Auth (v1)
